@@ -5,7 +5,7 @@ MediaAlign is a cross-platform desktop application designed to help Plex users f
 ## Features
 
 - Select a directory containing TV series episodes
-- Fetch episode metadata from IMDB using series ID
+- Fetch episode metadata from TMDB using series ID
 - Extract audio from media files
 - Use speech-to-text to analyze audio content
 - Match audio content with episode descriptions
@@ -72,6 +72,6 @@ ISC
 
 - Add support for movies
 - Implement batch processing
-- Add more metadata sources beyond IMDB
+- Add more metadata sources beyond TMDB
 - Improve matching algorithm accuracy
 - Add support for subtitles analysis 

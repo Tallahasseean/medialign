@@ -55,9 +55,7 @@ async function initialize() {
 
 // Quit when all windows are closed
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  app.quit();
 });
 
 app.on('activate', () => {

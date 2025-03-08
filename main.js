@@ -12,9 +12,8 @@ function createWindow() {
     width: 1200,
     height: 800,
     webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
-      preload: path.join(__dirname, 'preload.js')
+      nodeIntegration: true,
+      contextIsolation: false
     }
   });
 
@@ -24,13 +23,22 @@ function createWindow() {
   // Open DevTools in development mode
   if (process.argv.includes('--dev')) {
     mainWindow.webContents.openDevTools();
+    console.log('DevTools opened');
   }
 
   // Emitted when the window is closed
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+  
+  console.log('Window created');
 }
+
+// Create window when Electron has finished initialization
+app.whenReady().then(() => {
+  createWindow();
+  initialize();
+});
 
 // Initialize the application
 async function initialize() {
@@ -42,12 +50,6 @@ async function initialize() {
     console.error('Error initializing application:', error);
   }
 }
-
-// Create window when Electron has finished initialization
-app.whenReady().then(() => {
-  createWindow();
-  initialize();
-});
 
 // Quit when all windows are closed
 app.on('window-all-closed', () => {
@@ -73,20 +75,31 @@ app.on('will-quit', async (event) => {
 });
 
 // IPC handlers for communication with renderer process
-ipcMain.handle('select-directory', async () => {
-  const result = await dialog.showOpenDialog(mainWindow, {
-    properties: ['openDirectory']
-  });
-  
-  if (!result.canceled) {
-    return result.filePaths[0];
+ipcMain.on('select-directory', async (event) => {
+  console.log('select-directory called in main process');
+  try {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openDirectory']
+    });
+    
+    console.log('Dialog result:', result);
+    
+    if (!result.canceled) {
+      event.reply('directory-selected', result.filePaths[0]);
+    } else {
+      event.reply('directory-selected', null);
+    }
+  } catch (error) {
+    console.error('Error in select-directory:', error);
+    event.reply('directory-selected', { error: error.message });
   }
-  return null;
 });
 
 // Process a TV series
-ipcMain.handle('analyze-series', async (event, { directory, imdbId }) => {
+ipcMain.on('analyze-series', async (event, data) => {
   try {
+    const { directory, imdbId } = data;
+    
     // Validate inputs
     if (!directory || !imdbId) {
       throw new Error('Directory and IMDB ID are required');
@@ -98,9 +111,10 @@ ipcMain.handle('analyze-series', async (event, { directory, imdbId }) => {
     }
     
     // Process the series
-    return await processor.processSeries(directory, imdbId);
+    const result = await processor.processSeries(directory, imdbId);
+    event.reply('analyze-series-result', result);
   } catch (error) {
     console.error('Error analyzing series:', error);
-    throw error;
+    event.reply('analyze-series-result', { error: error.message });
   }
 }); 

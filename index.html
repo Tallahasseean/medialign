@@ -9,11 +9,47 @@
 <body>
   <div class="container mx-auto px-4 py-8">
     <header class="text-center mb-8">
-      <h1 class="text-4xl font-bold text-primary">MediaAlign</h1>
+      <h1 class="text-4xl font-bold text-primary">Medialign</h1>
       <p class="text-xl text-base-content opacity-70">TV Series Episode Alignment Tool</p>
     </header>
 
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+    <!-- Main Series Table -->
+    <div class="card bg-base-100 shadow-xl mb-8">
+      <div class="card-body">
+        <div class="flex justify-between items-center mb-4">
+          <h2 class="card-title">TV Series Library</h2>
+          <button id="add-series-button" class="btn btn-primary">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+            </svg>
+            Add TV Series Root Directory
+          </button>
+        </div>
+        
+        <div class="overflow-x-auto">
+          <table id="series-table" class="table table-zebra w-full">
+            <thead>
+              <tr>
+                <th>Series Name</th>
+                <th>Directory</th>
+                <th>IMDB ID</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="series-table-body">
+              <!-- Series will be populated here -->
+              <tr class="text-center">
+                <td colspan="5" class="py-8 text-base-content opacity-60">No TV series added yet. Click "Add TV Series Root Directory" to get started.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Series Details Section (shown when analyzing a series) -->
+    <div id="series-details" class="grid grid-cols-1 md:grid-cols-2 gap-8" style="display: none;">
       <div class="card bg-base-100 shadow-xl">
         <div class="card-body">
           <h2 class="card-title">Setup</h2>
@@ -72,6 +108,42 @@
       </div>
     </div>
   </div>
+
+  <!-- Add Series Modal -->
+  <dialog id="add-series-modal" class="modal">
+    <div class="modal-box">
+      <h3 class="font-bold text-lg">Add TV Series</h3>
+      <div class="py-4">
+        <div class="form-control w-full">
+          <label class="label">
+            <span class="label-text">TV Series Directory:</span>
+          </label>
+          <div class="input-group">
+            <input type="text" id="new-series-directory" readonly placeholder="Select a directory" class="input input-bordered w-full" />
+            <button id="new-browse-button" class="btn btn-square">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 00-1.883 2.542l.857 6a2.25 2.25 0 002.227 1.932H19.05a2.25 2.25 0 002.227-1.932l.857-6a2.25 2.25 0 00-1.883-2.542m-16.5 0V6A2.25 2.25 0 016 3.75h3.879a1.5 1.5 0 011.06.44l2.122 2.12a1.5 1.5 0 001.06.44H18A2.25 2.25 0 0120.25 9v.776" />
+              </svg>
+            </button>
+          </div>
+        </div>
+        
+        <div class="form-control w-full mt-4">
+          <label class="label">
+            <span class="label-text">IMDB ID (optional):</span>
+          </label>
+          <input type="text" id="new-imdb-id" placeholder="e.g., tt0944947" class="input input-bordered w-full" />
+        </div>
+      </div>
+      <div class="modal-action">
+        <button id="cancel-add-series" class="btn">Cancel</button>
+        <button id="confirm-add-series" class="btn btn-primary">Add Series</button>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop">
+      <button>close</button>
+    </form>
+  </dialog>
 
   <script src="renderer.js"></script>
 </body>

@@ -1,0 +1,179 @@
+/* General Styles */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  background-color: #f5f5f7;
+  color: #333;
+  line-height: 1.6;
+}
+
+.container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+header {
+  text-align: center;
+  margin-bottom: 30px;
+  padding: 20px 0;
+  border-bottom: 1px solid #ddd;
+}
+
+header h1 {
+  font-size: 2.5rem;
+  color: #0070c9;
+  margin-bottom: 5px;
+}
+
+header p {
+  font-size: 1.2rem;
+  color: #666;
+}
+
+/* Main Content Styles */
+.main-content {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 30px;
+}
+
+@media (min-width: 768px) {
+  .main-content {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.setup-section, .results-section {
+  background-color: #fff;
+  border-radius: 10px;
+  padding: 25px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+h2 {
+  margin-bottom: 20px;
+  color: #333;
+  font-size: 1.5rem;
+}
+
+/* Form Styles */
+.form-group {
+  margin-bottom: 20px;
+}
+
+label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 500;
+}
+
+input[type="text"] {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  font-size: 1rem;
+}
+
+.input-with-button {
+  display: flex;
+  gap: 10px;
+}
+
+.input-with-button input {
+  flex: 1;
+}
+
+button {
+  padding: 10px 15px;
+  background-color: #f5f5f7;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 1rem;
+  transition: background-color 0.2s;
+}
+
+button:hover {
+  background-color: #e5e5e5;
+}
+
+.primary-button {
+  background-color: #0070c9;
+  color: white;
+  border: none;
+  padding: 12px 20px;
+  width: 100%;
+  font-weight: 500;
+  margin-top: 10px;
+}
+
+.primary-button:hover {
+  background-color: #005ba1;
+}
+
+/* Results Styles */
+.progress-bar {
+  height: 20px;
+  background-color: #f0f0f0;
+  border-radius: 10px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+
+#progress-bar-fill {
+  height: 100%;
+  background-color: #0070c9;
+  width: 0%;
+  transition: width 0.3s;
+}
+
+#progress-status {
+  text-align: center;
+  margin-bottom: 20px;
+  font-style: italic;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 20px;
+}
+
+th, td {
+  padding: 12px 15px;
+  text-align: left;
+  border-bottom: 1px solid #ddd;
+}
+
+th {
+  background-color: #f5f5f7;
+  font-weight: 600;
+}
+
+tr:hover {
+  background-color: #f9f9f9;
+}
+
+.action-button {
+  padding: 6px 12px;
+  font-size: 0.9rem;
+}
+
+.success {
+  color: #28a745;
+}
+
+.warning {
+  color: #ffc107;
+}
+
+.error {
+  color: #dc3545;
+} 

@@ -10,8 +10,9 @@ const { ipcMain } = require('electron');
 // Initialize the processor
 async function initialize() {
   try {
+    console.log('Initializing database...');
     await db.initDatabase();
-    console.log('Database initialized');
+    console.log('Database initialized successfully');
     
     // Clear expired cache entries
     await db.clearExpiredCache();
@@ -19,10 +20,18 @@ async function initialize() {
     
     // Set up IPC handlers
     setupIpcHandlers();
+    console.log('IPC handlers set up');
     
     return true;
   } catch (error) {
     console.error('Error initializing processor:', error);
+    // Try to recover by setting up IPC handlers anyway
+    try {
+      setupIpcHandlers();
+      console.log('IPC handlers set up despite database error');
+    } catch (handlerError) {
+      console.error('Error setting up IPC handlers:', handlerError);
+    }
     return false;
   }
 }
@@ -55,6 +64,16 @@ function setupIpcHandlers() {
       return await db.getProcessingSummary(seriesId);
     } catch (error) {
       console.error('Error getting processing status:', error);
+      throw error;
+    }
+  });
+  
+  // Get episode details
+  ipcMain.handle('get-episode-details', async (event, { tmdbId, seasonNumber, episodeNumber, apiKey, accessToken }) => {
+    try {
+      return await tmdbApi.getEpisodeDetails(tmdbId, seasonNumber, episodeNumber, apiKey, accessToken);
+    } catch (error) {
+      console.error('Error getting episode details:', error);
       throw error;
     }
   });
@@ -146,7 +165,8 @@ async function processFile(file, episodes) {
           matchingEpisode.id,
           'correct',
           null,
-          1.0
+          1.0,
+          1
         );
         console.log(`File ${file.original_filename} is correctly named`);
         return;
@@ -187,7 +207,8 @@ async function processFile(file, episodes) {
         matchedEpisode.id,
         status,
         newFilename,
-        score
+        score,
+        status === 'correct' ? 1 : 0
       );
       
       console.log(`File ${file.original_filename} matched with ${matchedEpisode.title} (${status})`);
@@ -198,7 +219,8 @@ async function processFile(file, episodes) {
         null,
         'unknown',
         null,
-        score
+        score,
+        0
       );
       
       console.log(`No good match found for ${file.original_filename}`);
@@ -215,7 +237,8 @@ async function processFile(file, episodes) {
       null,
       'error',
       null,
-      0
+      0,
+      0 // isCorrect = false
     );
   }
 }
@@ -255,7 +278,8 @@ async function fixFile(fileId, episodeId) {
       episodeId,
       'fixed',
       newFilename,
-      1.0
+      1.0,
+      1 // isCorrect = true
     );
     
     // Return updated file

@@ -280,10 +280,83 @@ async function validateCredentials(apiKey = '', accessToken = '') {
   }
 }
 
+/**
+ * Get detailed information for a specific episode
+ * @param {string} tmdbId - The TMDB ID of the series
+ * @param {number} seasonNumber - The season number
+ * @param {number} episodeNumber - The episode number
+ * @param {string} [apiKey] - The API key to use
+ * @param {string} [accessToken] - The access token to use
+ * @returns {Promise<Object>} - Episode information
+ */
+async function getEpisodeDetails(tmdbId, seasonNumber, episodeNumber, apiKey = '', accessToken = '') {
+  try {
+    // Check cache first
+    const cachedData = await db.getCachedEpisodeInfo(tmdbId, seasonNumber, episodeNumber);
+    
+    if (cachedData && isCacheValid(cachedData.lastUpdated)) {
+      console.log(`Using cached data for episode ${seasonNumber}x${episodeNumber} of series ${tmdbId}`);
+      return cachedData.data;
+    }
+    
+    // Cache miss or expired, fetch from API
+    console.log(`Fetching episode ${seasonNumber}x${episodeNumber} data for series ${tmdbId} from TMDB API`);
+    
+    // API endpoint documentation: https://developer.themoviedb.org/reference/tv-episode-details
+    const data = await makeRequest(`/tv/${tmdbId}/season/${seasonNumber}/episode/${episodeNumber}`, {
+      language: 'en-US',
+      append_to_response: 'credits,images,videos'
+    }, apiKey, accessToken);
+    
+    // Format the data
+    const formattedData = {
+      episodeId: data.id,
+      name: data.name,
+      overview: data.overview || '',
+      airDate: data.air_date,
+      episodeNumber: data.episode_number,
+      seasonNumber: data.season_number,
+      stillPath: data.still_path,
+      still: data.still_path ? `${IMAGE_BASE_URL}/w300${data.still_path}` : null,
+      voteAverage: data.vote_average,
+      runtime: data.runtime,
+      crew: data.crew ? data.crew.map(person => ({
+        id: person.id,
+        name: person.name,
+        job: person.job,
+        department: person.department,
+        profilePath: person.profile_path ? `${IMAGE_BASE_URL}/w185${person.profile_path}` : null
+      })) : [],
+      guestStars: data.guest_stars ? data.guest_stars.map(person => ({
+        id: person.id,
+        name: person.name,
+        character: person.character,
+        profilePath: person.profile_path ? `${IMAGE_BASE_URL}/w185${person.profile_path}` : null
+      })) : [],
+      videos: data.videos && data.videos.results ? data.videos.results.map(video => ({
+        id: video.id,
+        key: video.key,
+        name: video.name,
+        site: video.site,
+        type: video.type
+      })) : []
+    };
+    
+    // Cache the formatted data
+    await db.cacheEpisodeInfo(tmdbId, seasonNumber, episodeNumber, formattedData);
+    
+    return formattedData;
+  } catch (error) {
+    console.error(`Error getting episode details for ${tmdbId} S${seasonNumber}E${episodeNumber}:`, error);
+    throw error;
+  }
+}
+
 module.exports = {
   getSeriesInfo,
   getSeasonInfo,
   getAllEpisodes,
+  getEpisodeDetails,
   searchSeries,
   validateCredentials,
   IMAGE_BASE_URL

@@ -160,6 +160,20 @@ function setupIpcListeners() {
       displayResults(result.files);
     }
   });
+
+  // Add IPC handler for fetching episode details
+  ipcRenderer.on('episode-details-result', (event, result) => {
+    console.log('Episode details result:', result);
+    
+    if (result && result.error) {
+      console.error('Error fetching episode details:', result.error);
+      alert(`Error fetching episode details: ${result.error}`);
+      return;
+    }
+    
+    // Display episode details in a modal
+    displayEpisodeDetails(result);
+  });
 }
 
 // Extract title from directory path (last directory name)
@@ -1178,11 +1192,37 @@ function displayResults(results) {
   results.forEach(result => {
     const row = document.createElement('tr');
     
+    // Add a class to highlight correct episodes
+    if (result.is_correct) {
+      row.classList.add('bg-success bg-opacity-10');
+    }
+    
     const seasonCell = document.createElement('td');
     seasonCell.textContent = result.season_number;
     
     const episodeCell = document.createElement('td');
-    episodeCell.textContent = result.episode_number;
+    episodeCell.className = 'flex items-center gap-2';
+    
+    // Episode number
+    const episodeNumber = document.createElement('span');
+    episodeNumber.textContent = result.episode_number;
+    episodeCell.appendChild(episodeNumber);
+    
+    // TMDB info icon
+    const infoIcon = document.createElement('button');
+    infoIcon.className = 'btn btn-xs btn-circle btn-ghost';
+    infoIcon.innerHTML = `
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+        <path stroke-linecap="round" stroke-linejoin="round" d="m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z" />
+      </svg>
+    `;
+    infoIcon.title = "View TMDB episode details";
+    infoIcon.addEventListener('click', () => {
+      // Get the current series TMDB ID
+      const tmdbId = seriesList[currentSeriesId].tmdbId;
+      fetchEpisodeDetails(tmdbId, result.season_number, result.episode_number);
+    });
+    episodeCell.appendChild(infoIcon);
     
     const filenameCell = document.createElement('td');
     filenameCell.textContent = result.original_filename;
@@ -1196,6 +1236,19 @@ function displayResults(results) {
       statusCell.innerHTML = '<span class="badge badge-success">Fixed</span>';
     } else {
       statusCell.innerHTML = '<span class="badge badge-warning">Unknown</span>';
+    }
+    
+    // Add a checkmark icon for episodes that have been verified as correct
+    if (result.is_correct) {
+      const verifiedIcon = document.createElement('span');
+      verifiedIcon.className = 'ml-2 text-success';
+      verifiedIcon.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+        </svg>
+      `;
+      verifiedIcon.title = "Verified by audio analysis";
+      statusCell.appendChild(verifiedIcon);
     }
     
     const actionCell = document.createElement('td');
@@ -1251,4 +1304,123 @@ function resetStepper() {
   stepAnalyze.classList.remove('active');
   stepMatch.classList.remove('active');
   stepTmdb.classList.add('active');
+}
+
+// Function to fetch episode details
+function fetchEpisodeDetails(tmdbId, seasonNumber, episodeNumber) {
+  const apiKey = getTmdbApiKey();
+  const accessToken = getTmdbAccessToken();
+  
+  // Show loading indicator
+  document.body.classList.add('cursor-wait');
+  
+  // Request episode details from main process
+  ipcRenderer.invoke('get-episode-details', {
+    tmdbId,
+    seasonNumber,
+    episodeNumber,
+    apiKey,
+    accessToken
+  }).then(result => {
+    document.body.classList.remove('cursor-wait');
+    
+    if (result && result.error) {
+      console.error('Error fetching episode details:', result.error);
+      alert(`Error fetching episode details: ${result.error}`);
+    } else {
+      // Display episode details
+      displayEpisodeDetails(result);
+    }
+  }).catch(error => {
+    document.body.classList.remove('cursor-wait');
+    console.error('Error fetching episode details:', error);
+    alert(`Error fetching episode details: ${error.message || error}`);
+  });
+}
+
+// Function to display episode details in a modal
+function displayEpisodeDetails(episode) {
+  // Create modal if it doesn't exist
+  let episodeModal = document.getElementById('episode-details-modal');
+  if (!episodeModal) {
+    episodeModal = document.createElement('dialog');
+    episodeModal.id = 'episode-details-modal';
+    episodeModal.className = 'modal';
+    document.body.appendChild(episodeModal);
+  }
+  
+  // Format air date
+  const airDate = episode.airDate ? new Date(episode.airDate).toLocaleDateString() : 'Unknown';
+  
+  // Create modal content
+  episodeModal.innerHTML = `
+    <div class="modal-box max-w-3xl">
+      <h3 class="font-bold text-lg">S${episode.seasonNumber}E${episode.episodeNumber}: ${episode.name}</h3>
+      <div class="py-4">
+        <div class="flex flex-col md:flex-row gap-4">
+          ${episode.still ? `
+            <div class="flex-none md:w-1/3">
+              <img src="${episode.still}" alt="${episode.name}" class="rounded-lg w-full">
+            </div>
+          ` : ''}
+          <div class="flex-1">
+            <p class="text-sm opacity-70 mb-2">Air Date: ${airDate}</p>
+            ${episode.runtime ? `<p class="text-sm opacity-70 mb-2">Runtime: ${episode.runtime} minutes</p>` : ''}
+            ${episode.voteAverage ? `<p class="text-sm opacity-70 mb-4">Rating: ${episode.voteAverage.toFixed(1)}/10</p>` : ''}
+            <p class="mb-4">${episode.overview || 'No overview available.'}</p>
+            
+            ${episode.guestStars && episode.guestStars.length > 0 ? `
+              <div class="mb-4">
+                <h4 class="font-semibold mb-2">Guest Stars</h4>
+                <div class="flex flex-wrap gap-2">
+                  ${episode.guestStars.slice(0, 5).map(person => `
+                    <div class="badge badge-outline">${person.name} ${person.character ? `as ${person.character}` : ''}</div>
+                  `).join('')}
+                  ${episode.guestStars.length > 5 ? `<div class="badge badge-outline">+${episode.guestStars.length - 5} more</div>` : ''}
+                </div>
+              </div>
+            ` : ''}
+            
+            ${episode.crew && episode.crew.length > 0 ? `
+              <div>
+                <h4 class="font-semibold mb-2">Crew</h4>
+                <div class="flex flex-wrap gap-2">
+                  ${episode.crew.filter(person => ['Director', 'Writer'].includes(person.job)).map(person => `
+                    <div class="badge badge-outline">${person.job}: ${person.name}</div>
+                  `).join('')}
+                </div>
+              </div>
+            ` : ''}
+          </div>
+        </div>
+        
+        ${episode.videos && episode.videos.length > 0 ? `
+          <div class="mt-6">
+            <h4 class="font-semibold mb-2">Videos</h4>
+            <div class="flex flex-wrap gap-2">
+              ${episode.videos.slice(0, 3).map(video => `
+                <a href="https://www.youtube.com/watch?v=${video.key}" target="_blank" class="btn btn-sm btn-outline">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-1">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z" />
+                  </svg>
+                  ${video.name}
+                </a>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
+      </div>
+      <div class="modal-action">
+        <form method="dialog">
+          <button class="btn">Close</button>
+        </form>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop">
+      <button>close</button>
+    </form>
+  `;
+  
+  // Show the modal
+  episodeModal.showModal();
 } 

@@ -51,6 +51,7 @@ function initDatabase() {
         corrected_filename TEXT,
         status TEXT DEFAULT 'pending', /* pending, correct, incorrect, fixed */
         confidence_score REAL,
+        is_correct BOOLEAN DEFAULT 0,
         processed_at TIMESTAMP,
         FOREIGN KEY (series_id) REFERENCES series (id),
         FOREIGN KEY (episode_id) REFERENCES episodes (id)
@@ -86,9 +87,44 @@ function initDatabase() {
         if (err) {
           reject(err);
         } else {
-          resolve();
+          // Run migrations after tables are created
+          migrateDatabase()
+            .then(() => resolve())
+            .catch(err => reject(err));
         }
       });
+    });
+  });
+}
+
+// Run database migrations
+function migrateDatabase() {
+  return new Promise((resolve, reject) => {
+    // Check if is_correct column exists in files table
+    db.all("PRAGMA table_info(files)", (err, rows) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      
+      // Check if the column exists
+      const hasIsCorrectColumn = rows.some(row => row.name === 'is_correct');
+      
+      if (!hasIsCorrectColumn) {
+        console.log('Adding is_correct column to files table...');
+        // Add the column if it doesn't exist
+        db.run("ALTER TABLE files ADD COLUMN is_correct BOOLEAN DEFAULT 0", (err) => {
+          if (err) {
+            reject(err);
+          } else {
+            console.log('Migration completed successfully');
+            resolve();
+          }
+        });
+      } else {
+        console.log('is_correct column already exists in files table');
+        resolve();
+      }
     });
   });
 }
@@ -184,11 +220,11 @@ function addFile(seriesId, originalPath, originalFilename) {
   });
 }
 
-function updateFileStatus(fileId, episodeId, status, correctedFilename, confidenceScore) {
+function updateFileStatus(fileId, episodeId, status, correctedFilename, confidenceScore, isCorrect = 0) {
   return new Promise((resolve, reject) => {
     db.run(
-      'UPDATE files SET episode_id = ?, status = ?, corrected_filename = ?, confidence_score = ?, processed_at = CURRENT_TIMESTAMP WHERE id = ?',
-      [episodeId, status, correctedFilename, confidenceScore, fileId],
+      'UPDATE files SET episode_id = ?, status = ?, corrected_filename = ?, confidence_score = ?, is_correct = ?, processed_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [episodeId, status, correctedFilename, confidenceScore, isCorrect, fileId],
       function(err) {
         if (err) {
           reject(err);
@@ -338,6 +374,53 @@ function cacheSeasonInfo(tmdbId, seasonNumber, data) {
   });
 }
 
+// Get cached episode data
+function getCachedEpisodeInfo(tmdbId, seasonNumber, episodeNumber) {
+  return new Promise((resolve, reject) => {
+    db.get(
+      'SELECT data, last_updated FROM tmdb_episode_cache WHERE tmdb_id = ? AND season_number = ? AND episode_number = ?',
+      [tmdbId, seasonNumber, episodeNumber],
+      (err, row) => {
+        if (err) {
+          reject(err);
+        } else if (!row) {
+          resolve(null);
+        } else {
+          try {
+            const data = JSON.parse(row.data);
+            const lastUpdated = new Date(row.last_updated);
+            resolve({ data, lastUpdated });
+          } catch (parseErr) {
+            console.error('Error parsing cached episode data:', parseErr);
+            resolve(null);
+          }
+        }
+      }
+    );
+  });
+}
+
+// Cache episode data
+function cacheEpisodeInfo(tmdbId, seasonNumber, episodeNumber, data) {
+  return new Promise((resolve, reject) => {
+    const jsonData = JSON.stringify(data);
+    
+    db.run(
+      `INSERT OR REPLACE INTO tmdb_episode_cache 
+       (tmdb_id, season_number, episode_number, data, last_updated) 
+       VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+      [tmdbId, seasonNumber, episodeNumber, jsonData],
+      function(err) {
+        if (err) {
+          reject(err);
+        } else {
+          resolve();
+        }
+      }
+    );
+  });
+}
+
 // Clear expired cache entries
 function clearExpiredCache(expirationDays = 30) {
   return new Promise((resolve, reject) => {
@@ -408,6 +491,8 @@ module.exports = {
   cacheSeriesInfo,
   getCachedSeasonInfo,
   cacheSeasonInfo,
+  getCachedEpisodeInfo,
+  cacheEpisodeInfo,
   clearExpiredCache,
   closeDatabase
 }; 

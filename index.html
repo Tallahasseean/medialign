@@ -34,6 +34,49 @@
       background-color: rgba(59, 130, 246, 0.05);
     }
     
+    /* Fix for badges to prevent text wrapping */
+    .badge {
+      white-space: nowrap;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: fit-content;
+    }
+    
+    /* Fix icon sizing on small screens */
+    svg.fixed-size {
+      min-width: 1rem;
+      min-height: 1rem;
+      width: 1rem !important;
+      height: 1rem !important;
+      flex-shrink: 0;
+    }
+    
+    .directory-icon {
+      min-width: 1rem;
+      min-height: 1rem;
+      flex-shrink: 0;
+    }
+    
+    /* Ensure consistent spacing in flex layouts */
+    .flex.items-center > * {
+      flex-shrink: 0;
+    }
+    
+    /* Text truncation for long filenames */
+    .truncate-text {
+      max-width: 180px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    
+    @media (max-width: 768px) {
+      .truncate-text {
+        max-width: 120px;
+      }
+    }
+    
     @keyframes fadeIn {
       from { opacity: 0; transform: translateY(-5px); }
       to { opacity: 1; transform: translateY(0); }
@@ -78,7 +121,7 @@
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-2">
               <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
             </svg>
-            Add TV Series Root Directory
+            Add TV Series
           </button>
         </div>
         
@@ -96,7 +139,7 @@
             <tbody id="series-table-body">
               <!-- Series will be populated here -->
               <tr class="text-center">
-                <td colspan="5" class="py-8 text-base-content opacity-60">No TV series added yet. Click "Add TV Series Root Directory" to get started.</td>
+                <td colspan="5" class="py-8 text-base-content opacity-60">No TV series added yet. Click "Add TV Series" to get started.</td>
               </tr>
             </tbody>
           </table>

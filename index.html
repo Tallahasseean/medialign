@@ -207,6 +207,18 @@
       <div class="card bg-base-100 shadow-xl">
         <div class="card-body">
           <h2 class="card-title">Results</h2>
+          
+          <!-- Analysis Steps Stepper -->
+          <div id="analysis-stepper" class="mb-6" style="display: none;">
+            <ul class="steps steps-vertical lg:steps-horizontal w-full">
+              <li id="step-tmdb" class="step">Fetch TMDB Data</li>
+              <li id="step-scan" class="step">Scan Media Files</li>
+              <li id="step-extract" class="step">Extract Audio</li>
+              <li id="step-analyze" class="step">Analyze Content</li>
+              <li id="step-match" class="step">Match Episodes</li>
+            </ul>
+          </div>
+          
           <div id="progress-container" style="display: none;">
             <progress class="progress progress-primary w-full" value="0" max="100" id="progress-bar"></progress>
             <p id="progress-status" class="text-center mt-2 italic">Processing...</p>

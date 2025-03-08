@@ -45,6 +45,14 @@ const progressStatus = document.getElementById('progress-status');
 const resultsTable = document.getElementById('results-table');
 const resultsBody = document.getElementById('results-body');
 
+// DOM Elements - Analysis Stepper
+const analysisStepper = document.getElementById('analysis-stepper');
+const stepTmdb = document.getElementById('step-tmdb');
+const stepScan = document.getElementById('step-scan');
+const stepExtract = document.getElementById('step-extract');
+const stepAnalyze = document.getElementById('step-analyze');
+const stepMatch = document.getElementById('step-match');
+
 // Current series ID (set after analysis)
 let currentSeriesId = null;
 // Store all series
@@ -827,6 +835,9 @@ function showSeriesDetails(index) {
   
   // Hide any previous results
   tmdbResults.style.display = 'none';
+  analysisStepper.style.display = 'none';
+  progressContainer.style.display = 'none';
+  resultsTable.style.display = 'none';
   
   // Show the series details section
   seriesDetails.style.display = 'grid';
@@ -1032,12 +1043,16 @@ document.addEventListener('DOMContentLoaded', () => {
       renderSeriesTable();
     }
     
+    // Reset stepper and show it
+    resetStepper();
+    analysisStepper.style.display = 'block';
+    
     // Show progress
     progressContainer.style.display = 'block';
     progressBar.value = 0;
     progressBar.classList.add('progress-primary');
     progressBar.classList.remove('progress-error');
-    progressStatus.textContent = 'Analyzing files...';
+    progressStatus.textContent = 'Starting analysis...';
     resultsTable.style.display = 'none';
     
     // Use the TMDB API key and access token from settings if available
@@ -1066,20 +1081,34 @@ function simulateProgress() {
     progress += 5;
     progressBar.value = progress;
     
-    if (progress < 20) {
-      progressStatus.textContent = 'Downloading TMDB data...';
-    } else if (progress < 40) {
+    // Update the stepper based on progress
+    if (progress === 20) {
+      // Finished fetching TMDB data, moving to scanning files
+      stepTmdb.classList.add('step-primary');
+      stepScan.classList.add('active');
       progressStatus.textContent = 'Scanning media files...';
-    } else if (progress < 70) {
+    } else if (progress === 40) {
+      // Finished scanning files, moving to extracting audio
+      stepScan.classList.add('step-primary');
+      stepExtract.classList.add('active');
       progressStatus.textContent = 'Extracting audio from files...';
-    } else if (progress < 90) {
-      progressStatus.textContent = 'Analyzing audio and matching episodes...';
-    } else {
-      progressStatus.textContent = 'Finalizing results...';
+    } else if (progress === 70) {
+      // Finished extracting audio, moving to analyzing content
+      stepExtract.classList.add('step-primary');
+      stepAnalyze.classList.add('active');
+      progressStatus.textContent = 'Analyzing audio content...';
+    } else if (progress === 85) {
+      // Finished analyzing content, moving to matching episodes
+      stepAnalyze.classList.add('step-primary');
+      stepMatch.classList.add('active');
+      progressStatus.textContent = 'Matching episodes with TMDB data...';
     }
     
     if (progress >= 100) {
       clearInterval(interval);
+      
+      // Complete all steps
+      stepMatch.classList.add('step-primary');
       progressStatus.textContent = 'Analysis complete!';
       
       // Update the series status
@@ -1212,4 +1241,14 @@ function fixFile(fileId, episodeId) {
     episodeId: episodeId
   });
   */
+}
+
+// Reset stepper and show it
+function resetStepper() {
+  stepTmdb.classList.remove('active');
+  stepScan.classList.remove('active');
+  stepExtract.classList.remove('active');
+  stepAnalyze.classList.remove('active');
+  stepMatch.classList.remove('active');
+  stepTmdb.classList.add('active');
 } 

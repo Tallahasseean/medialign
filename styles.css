@@ -8046,6 +8046,10 @@ details.collapse summary::-webkit-details-marker {
   margin-bottom: 1rem;
 }
 
+.mb-6 {
+  margin-bottom: 1.5rem;
+}
+
 .mb-8 {
   margin-bottom: 2rem;
 }
@@ -9974,6 +9978,37 @@ details.collapse summary::-webkit-details-marker {
     .sm\:container {
       max-width: 1536px;
     }
+  }
+}
+
+@media (min-width: 1024px) {
+  .lg\:steps-horizontal {
+    grid-auto-columns: 1fr;
+    display: inline-grid;
+    grid-auto-flow: column;
+    overflow: hidden;
+    overflow-x: auto;
+  }
+
+  .lg\:steps-horizontal .step {
+    display: grid;
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+    place-items: center;
+    text-align: center;
+    grid-template-rows: 40px 1fr;
+    grid-template-columns: auto;
+    min-width: 4rem;
+  }
+
+  .lg\:steps-horizontal .step:before {
+    height: 0.5rem;
+    width: 100%;
+    --tw-translate-x: 0px;
+    --tw-translate-y: 0px;
+    transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
+    content: "";
+    margin-left: -100%;
   }
 }
 

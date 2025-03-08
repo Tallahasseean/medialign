@@ -1,6 +1,6 @@
 const path = require('path');
 const db = require('./database');
-const imdbApi = require('./imdb-api');
+const tmdbApi = require('./tmdb-api');
 const fileScanner = require('./file-scanner');
 const audioProcessor = require('./audio-processor');
 const speechToText = require('./speech-to-text');
@@ -26,9 +26,9 @@ async function initialize() {
 // Set up IPC handlers for renderer process communication
 function setupIpcHandlers() {
   // Process a TV series
-  ipcMain.handle('process-series', async (event, { directory, imdbId }) => {
+  ipcMain.handle('process-series', async (event, { directory, tmdbId, apiKey, accessToken }) => {
     try {
-      return await processSeries(directory, imdbId);
+      return await processSeries(directory, tmdbId, apiKey, accessToken);
     } catch (error) {
       console.error('Error processing series:', error);
       throw error;
@@ -59,20 +59,22 @@ function setupIpcHandlers() {
 /**
  * Process a TV series
  * @param {string} directory - Path to the TV series directory
- * @param {string} imdbId - IMDB ID of the TV series
+ * @param {string} tmdbId - TMDB ID of the TV series
+ * @param {string} [apiKey] - TMDB API key
+ * @param {string} [accessToken] - TMDB access token
  * @returns {Promise<Object>} - Processing results
  */
-async function processSeries(directory, imdbId) {
+async function processSeries(directory, tmdbId, apiKey, accessToken) {
   try {
-    // Step 1: Get series info from IMDB
-    const seriesInfo = await imdbApi.getSeriesInfo(imdbId);
+    // Step 1: Get series info from TMDB
+    const seriesInfo = await tmdbApi.getSeriesInfo(tmdbId, apiKey, accessToken);
     console.log(`Processing series: ${seriesInfo.title}`);
     
     // Step 2: Add series to database
-    const seriesId = await db.addSeries(imdbId, seriesInfo.title, directory);
+    const seriesId = await db.addSeries(tmdbId, seriesInfo.title, directory);
     
-    // Step 3: Get all episodes from IMDB
-    const episodes = await imdbApi.getAllEpisodes(imdbId);
+    // Step 3: Get all episodes from TMDB
+    const episodes = await tmdbApi.getAllEpisodes(tmdbId, apiKey, accessToken);
     console.log(`Found ${episodes.length} episodes for ${seriesInfo.title}`);
     
     // Step 4: Add episodes to database
@@ -83,7 +85,7 @@ async function processSeries(directory, imdbId) {
         episode.episodeNumber,
         episode.title,
         episode.plot || '',
-        episode.imdbId
+        episode.tmdbId || episode.id
       );
     }
     

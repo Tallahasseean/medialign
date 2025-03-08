@@ -1,18 +1,19 @@
 const axios = require('axios');
 
 // Note: You'll need to sign up for a free API key from a service like OMDb API or RapidAPI
-// This is a placeholder for the API key
-const API_KEY = 'YOUR_API_KEY';
+// This is a placeholder for the API key that will be used if none is provided
+const DEFAULT_API_KEY = 'YOUR_API_KEY';
 
 /**
  * Get TV series information by IMDB ID
  * @param {string} imdbId - The IMDB ID (e.g., tt0944947)
+ * @param {string} [apiKey] - The API key to use
  * @returns {Promise<Object>} - Series information
  */
-async function getSeriesInfo(imdbId) {
+async function getSeriesInfo(imdbId, apiKey = DEFAULT_API_KEY) {
   try {
     // Using OMDb API as an example
-    const response = await axios.get(`http://www.omdbapi.com/?i=${imdbId}&apikey=${API_KEY}`);
+    const response = await axios.get(`http://www.omdbapi.com/?i=${imdbId}&apikey=${apiKey}`);
     
     if (response.data.Response === 'False') {
       throw new Error(response.data.Error || 'Failed to fetch series info');
@@ -36,12 +37,13 @@ async function getSeriesInfo(imdbId) {
  * Get season information for a TV series
  * @param {string} imdbId - The IMDB ID (e.g., tt0944947)
  * @param {number} seasonNumber - The season number
+ * @param {string} [apiKey] - The API key to use
  * @returns {Promise<Array>} - Array of episodes for the season
  */
-async function getSeasonInfo(imdbId, seasonNumber) {
+async function getSeasonInfo(imdbId, seasonNumber, apiKey = DEFAULT_API_KEY) {
   try {
     // Using OMDb API as an example
-    const response = await axios.get(`http://www.omdbapi.com/?i=${imdbId}&Season=${seasonNumber}&apikey=${API_KEY}`);
+    const response = await axios.get(`http://www.omdbapi.com/?i=${imdbId}&Season=${seasonNumber}&apikey=${apiKey}`);
     
     if (response.data.Response === 'False') {
       throw new Error(response.data.Error || 'Failed to fetch season info');
@@ -65,12 +67,13 @@ async function getSeasonInfo(imdbId, seasonNumber) {
 /**
  * Get detailed episode information
  * @param {string} episodeImdbId - The episode's IMDB ID
+ * @param {string} [apiKey] - The API key to use
  * @returns {Promise<Object>} - Detailed episode information
  */
-async function getEpisodeInfo(episodeImdbId) {
+async function getEpisodeInfo(episodeImdbId, apiKey = DEFAULT_API_KEY) {
   try {
     // Using OMDb API as an example
-    const response = await axios.get(`http://www.omdbapi.com/?i=${episodeImdbId}&apikey=${API_KEY}`);
+    const response = await axios.get(`http://www.omdbapi.com/?i=${episodeImdbId}&apikey=${apiKey}`);
     
     if (response.data.Response === 'False') {
       throw new Error(response.data.Error || 'Failed to fetch episode info');
@@ -96,18 +99,19 @@ async function getEpisodeInfo(episodeImdbId) {
 /**
  * Get all episodes for a TV series
  * @param {string} imdbId - The IMDB ID (e.g., tt0944947)
+ * @param {string} [apiKey] - The API key to use
  * @returns {Promise<Array>} - Array of all episodes with details
  */
-async function getAllEpisodes(imdbId) {
+async function getAllEpisodes(imdbId, apiKey = DEFAULT_API_KEY) {
   try {
     // First get series info to know how many seasons
-    const seriesInfo = await getSeriesInfo(imdbId);
+    const seriesInfo = await getSeriesInfo(imdbId, apiKey);
     const totalSeasons = parseInt(seriesInfo.totalSeasons, 10);
     
     // Get episodes for each season
     const episodePromises = [];
     for (let i = 1; i <= totalSeasons; i++) {
-      episodePromises.push(getSeasonInfo(imdbId, i));
+      episodePromises.push(getSeasonInfo(imdbId, i, apiKey));
     }
     
     const seasonsData = await Promise.all(episodePromises);
@@ -119,7 +123,7 @@ async function getAllEpisodes(imdbId) {
     // This could be done selectively or on-demand instead
     /*
     const detailedEpisodes = await Promise.all(
-      allEpisodes.map(episode => getEpisodeInfo(episode.imdbId))
+      allEpisodes.map(episode => getEpisodeInfo(episode.imdbId, apiKey))
     );
     return detailedEpisodes;
     */
@@ -134,12 +138,13 @@ async function getAllEpisodes(imdbId) {
 /**
  * Search for TV series by title
  * @param {string} title - The series title to search for
+ * @param {string} [apiKey] - The API key to use
  * @returns {Promise<Array>} - Array of search results
  */
-async function searchSeries(title) {
+async function searchSeries(title, apiKey = DEFAULT_API_KEY) {
   try {
     // Using OMDb API as an example
-    const response = await axios.get(`http://www.omdbapi.com/?s=${encodeURIComponent(title)}&type=series&apikey=${API_KEY}`);
+    const response = await axios.get(`http://www.omdbapi.com/?s=${encodeURIComponent(title)}&type=series&apikey=${apiKey}`);
     
     if (response.data.Response === 'False') {
       if (response.data.Error === 'Movie not found!') {

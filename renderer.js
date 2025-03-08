@@ -10,18 +10,34 @@ const addSeriesButton = document.getElementById('add-series-button');
 const seriesTableBody = document.getElementById('series-table-body');
 const seriesDetails = document.getElementById('series-details');
 
+// DOM Elements - Settings
+const settingsButton = document.getElementById('settings-button');
+const settingsModal = document.getElementById('settings-modal');
+const tmdbApiKeyInput = document.getElementById('tmdb-api-key');
+const tmdbAccessTokenInput = document.getElementById('tmdb-access-token');
+const cancelSettingsButton = document.getElementById('cancel-settings');
+const saveSettingsButton = document.getElementById('save-settings');
+
 // DOM Elements - Add Series Modal
 const addSeriesModal = document.getElementById('add-series-modal');
 const newSeriesDirectory = document.getElementById('new-series-directory');
+const newSeriesTitle = document.getElementById('new-series-title');
 const newBrowseButton = document.getElementById('new-browse-button');
-const newImdbId = document.getElementById('new-imdb-id');
+const newLookupButton = document.getElementById('new-lookup-button');
+const newTmdbId = document.getElementById('new-tmdb-id');
+const newTmdbResults = document.getElementById('new-tmdb-results');
+const newResultsList = document.getElementById('new-results-list');
 const cancelAddSeries = document.getElementById('cancel-add-series');
 const confirmAddSeries = document.getElementById('confirm-add-series');
 
 // DOM Elements - Series Details
 const seriesDirectoryInput = document.getElementById('series-directory');
+const seriesTitleInput = document.getElementById('series-title');
 const browseButton = document.getElementById('browse-button');
-const imdbIdInput = document.getElementById('imdb-id');
+const lookupButton = document.getElementById('lookup-button');
+const tmdbIdInput = document.getElementById('tmdb-id');
+const tmdbResults = document.getElementById('tmdb-results');
+const resultsList = document.getElementById('results-list');
 const analyzeButton = document.getElementById('analyze-button');
 const progressContainer = document.getElementById('progress-container');
 const progressBar = document.getElementById('progress-bar');
@@ -38,6 +54,8 @@ let seriesList = [];
 function init() {
   // Load series from local storage
   loadSeriesList();
+  // Load settings
+  loadSettings();
   // Render the series table
   renderSeriesTable();
   // Set up IPC listeners
@@ -56,12 +74,16 @@ function setupIpcListeners() {
         alert(`Error selecting directory: ${result.error}`);
       } else if (result) {
         newSeriesDirectory.value = result;
+        // Extract title from directory path
+        newSeriesTitle.value = extractTitleFromPath(result);
       }
     } else {
       if (result && result.error) {
         alert(`Error selecting directory: ${result.error}`);
       } else if (result) {
         seriesDirectoryInput.value = result;
+        // Extract title from directory path
+        seriesTitleInput.value = extractTitleFromPath(result);
         
         // Update the current series
         if (currentSeriesId !== null) {
@@ -70,6 +92,26 @@ function setupIpcListeners() {
           renderSeriesTable();
         }
       }
+    }
+  });
+  
+  // TMDB search response
+  ipcRenderer.on('tmdb-search-result', (event, result) => {
+    console.log('TMDB search result:', result);
+    
+    if (result && result.error) {
+      console.error('Error searching TMDB:', result.error);
+      alert(`Error searching TMDB: ${result.error}`);
+      return;
+    }
+    
+    // Check which search results to display
+    if (addSeriesModal.open) {
+      // Display in Add Series modal
+      displaySearchResults(result, newResultsList, newTmdbResults, newTmdbId);
+    } else {
+      // Display in Series Details
+      displaySearchResults(result, resultsList, tmdbResults, tmdbIdInput);
     }
   });
   
@@ -83,6 +125,14 @@ function setupIpcListeners() {
       progressBar.value = 100;
       progressBar.classList.remove('progress-primary');
       progressBar.classList.add('progress-error');
+      
+      // If error is related to API key, show a message to set up the TMDB API key
+      if (result.error.includes('API key') || result.error.includes('authentication')) {
+        progressStatus.textContent = `Error: Invalid or missing TMDB API key. Please check your settings.`;
+        setTimeout(() => {
+          settingsModal.showModal();
+        }, 1500);
+      }
       
       // Update the series status
       if (currentSeriesId !== null) {
@@ -104,6 +154,78 @@ function setupIpcListeners() {
   });
 }
 
+// Extract title from directory path (last directory name)
+function extractTitleFromPath(dirPath) {
+  // Remove trailing slashes
+  const cleanPath = dirPath.replace(/[\/\\]+$/, '');
+  // Split by slashes (handle both forward and backslashes)
+  const parts = cleanPath.split(/[\/\\]/);
+  // Get last part
+  const lastPart = parts[parts.length - 1];
+  // Replace underscores and dots with spaces, and capitalize words
+  return lastPart
+    .replace(/[_\.]/g, ' ')
+    .replace(/\b\w/g, l => l.toUpperCase())
+    .trim();
+}
+
+// Display TMDB search results
+function displaySearchResults(results, resultsListElement, resultsContainer, tmdbIdInput) {
+  // Clear previous results
+  resultsListElement.innerHTML = '';
+  
+  if (!results || !results.length) {
+    // No results
+    const noResults = document.createElement('li');
+    noResults.textContent = 'No results found';
+    noResults.className = 'text-error p-2';
+    resultsListElement.appendChild(noResults);
+  } else {
+    // Add each result
+    results.forEach(result => {
+      const li = document.createElement('li');
+      
+      const link = document.createElement('a');
+      link.href = '#';
+      link.className = 'flex justify-between items-center p-2 hover:bg-base-300 rounded';
+      
+      const titleDiv = document.createElement('div');
+      
+      const title = document.createElement('span');
+      title.textContent = result.title;
+      title.className = 'font-medium';
+      
+      const year = document.createElement('span');
+      year.textContent = result.year ? ` (${result.year})` : '';
+      year.className = 'text-sm opacity-70';
+      
+      const id = document.createElement('span');
+      id.textContent = result.id;
+      id.className = 'text-xs opacity-50';
+      
+      titleDiv.appendChild(title);
+      titleDiv.appendChild(year);
+      
+      link.appendChild(titleDiv);
+      link.appendChild(id);
+      
+      link.addEventListener('click', (e) => {
+        e.preventDefault();
+        // Set the TMDB ID input
+        tmdbIdInput.value = result.id;
+        // Hide the results
+        resultsContainer.style.display = 'none';
+      });
+      
+      li.appendChild(link);
+      resultsListElement.appendChild(li);
+    });
+  }
+  
+  // Show the results container
+  resultsContainer.style.display = 'block';
+}
+
 // Load series list from local storage
 function loadSeriesList() {
   const storedSeries = localStorage.getItem('seriesList');
@@ -115,6 +237,59 @@ function loadSeriesList() {
 // Save series list to local storage
 function saveSeriesList() {
   localStorage.setItem('seriesList', JSON.stringify(seriesList));
+}
+
+// Load settings from local storage
+function loadSettings() {
+  const tmdbApiKey = localStorage.getItem('tmdbApiKey');
+  if (tmdbApiKey) {
+    tmdbApiKeyInput.value = tmdbApiKey;
+  }
+  
+  const tmdbAccessToken = localStorage.getItem('tmdbAccessToken');
+  if (tmdbAccessToken) {
+    tmdbAccessTokenInput.value = tmdbAccessToken;
+  }
+}
+
+// Save settings to local storage
+function saveSettings() {
+  localStorage.setItem('tmdbApiKey', tmdbApiKeyInput.value);
+  localStorage.setItem('tmdbAccessToken', tmdbAccessTokenInput.value);
+}
+
+// Get TMDB API key
+function getTmdbApiKey() {
+  return localStorage.getItem('tmdbApiKey') || '';
+}
+
+// Get TMDB Access Token
+function getTmdbAccessToken() {
+  return localStorage.getItem('tmdbAccessToken') || '';
+}
+
+// Search TMDB for TV show
+function searchTmdb(title) {
+  const apiKey = getTmdbApiKey();
+  const accessToken = getTmdbAccessToken();
+  
+  if (!apiKey) {
+    alert('Please set your TMDB API key in Settings first.');
+    settingsModal.showModal();
+    return;
+  }
+  
+  if (!title) {
+    alert('Please enter a TV show title to search.');
+    return;
+  }
+  
+  // Send IPC message to search TMDB
+  ipcRenderer.send('search-tmdb', {
+    title,
+    apiKey,
+    accessToken
+  });
 }
 
 // Render the series table
@@ -147,9 +322,9 @@ function renderSeriesTable() {
     dirCell.textContent = series.directory;
     dirCell.className = 'text-xs';
     
-    // IMDB ID
-    const imdbCell = document.createElement('td');
-    imdbCell.textContent = series.imdbId || 'Not set';
+    // TMDB ID
+    const tmdbCell = document.createElement('td');
+    tmdbCell.textContent = series.tmdbId || 'Not set';
     
     // Status
     const statusCell = document.createElement('td');
@@ -205,7 +380,7 @@ function renderSeriesTable() {
     
     row.appendChild(nameCell);
     row.appendChild(dirCell);
-    row.appendChild(imdbCell);
+    row.appendChild(tmdbCell);
     row.appendChild(statusCell);
     row.appendChild(actionsCell);
     
@@ -220,7 +395,11 @@ function showSeriesDetails(index) {
   
   // Set the form values
   seriesDirectoryInput.value = series.directory;
-  imdbIdInput.value = series.imdbId || '';
+  seriesTitleInput.value = series.name || extractTitleFromPath(series.directory);
+  tmdbIdInput.value = series.tmdbId || '';
+  
+  // Hide any previous results
+  tmdbResults.style.display = 'none';
   
   // Show the series details section
   seriesDetails.style.display = 'grid';
@@ -235,7 +414,8 @@ function editSeries(index) {
   
   // Set the modal values
   newSeriesDirectory.value = series.directory;
-  newImdbId.value = series.imdbId || '';
+  newSeriesTitle.value = series.name || extractTitleFromPath(series.directory);
+  newTmdbId.value = series.tmdbId || '';
   
   // Store the index for later use
   newSeriesDirectory.dataset.editIndex = index;
@@ -257,9 +437,9 @@ function deleteSeries(index) {
 addSeriesButton.addEventListener('click', () => {
   // Clear the modal values
   newSeriesDirectory.value = '';
-  newImdbId.value = '';
-  
-  // Remove any edit index
+  newSeriesTitle.value = '';
+  newTmdbId.value = '';
+  newTmdbResults.style.display = 'none';
   delete newSeriesDirectory.dataset.editIndex;
   
   // Show the modal
@@ -278,7 +458,7 @@ cancelAddSeries.addEventListener('click', () => {
 
 confirmAddSeries.addEventListener('click', () => {
   const directory = newSeriesDirectory.value;
-  const imdbId = newImdbId.value;
+  const tmdbId = newTmdbId.value;
   
   // Validate directory
   if (!directory) {
@@ -286,9 +466,9 @@ confirmAddSeries.addEventListener('click', () => {
     return;
   }
   
-  // Validate IMDB ID if provided
-  if (imdbId && !imdbId.match(/^tt\d+$/)) {
-    alert('Please enter a valid IMDB ID (format: tt0123456) or leave it empty.');
+  // Validate TMDB ID if provided
+  if (tmdbId && !tmdbId.match(/^\d+$/)) {
+    alert('Please enter a valid TMDB ID (numeric format) or leave it empty.');
     return;
   }
   
@@ -297,17 +477,17 @@ confirmAddSeries.addEventListener('click', () => {
   if (editIndex !== undefined) {
     // Update existing series
     seriesList[editIndex].directory = directory;
-    seriesList[editIndex].imdbId = imdbId;
+    seriesList[editIndex].tmdbId = tmdbId;
+    seriesList[editIndex].name = newSeriesTitle.value || extractTitleFromPath(directory);
   } else {
     // Add new series
-    const dirParts = directory.split(/[\/\\]/);
-    const dirName = dirParts[dirParts.length - 1] || 'Unknown Series';
+    const seriesName = newSeriesTitle.value || extractTitleFromPath(directory);
     
     seriesList.push({
       directory,
-      imdbId,
+      tmdbId,
       status: 'not-analyzed',
-      name: dirName
+      name: seriesName
     });
   }
   
@@ -326,7 +506,7 @@ browseButton.addEventListener('click', () => {
 
 analyzeButton.addEventListener('click', () => {
   const seriesDirectory = seriesDirectoryInput.value;
-  const imdbId = imdbIdInput.value;
+  const tmdbId = tmdbIdInput.value;
   
   // Validate inputs
   if (!seriesDirectory) {
@@ -334,41 +514,45 @@ analyzeButton.addEventListener('click', () => {
     return;
   }
   
-  if (!imdbId) {
-    alert('Please enter an IMDB ID.');
-    return;
-  }
-  
-  if (!imdbId.match(/^tt\d+$/)) {
-    alert('Please enter a valid IMDB ID (format: tt0123456).');
+  // Validate TMDB ID if provided
+  if (tmdbId && !tmdbId.match(/^\d+$/)) {
+    alert('Please enter a valid TMDB ID (numeric format) or leave it empty.');
     return;
   }
   
   // Update the current series
   if (currentSeriesId !== null) {
-    seriesList[currentSeriesId].imdbId = imdbId;
+    seriesList[currentSeriesId].tmdbId = tmdbId;
+    seriesList[currentSeriesId].name = seriesTitleInput.value || extractTitleFromPath(seriesDirectory);
     seriesList[currentSeriesId].status = 'in-progress';
     saveSeriesList();
     renderSeriesTable();
   }
   
-  // Show progress UI
+  // Show progress
   progressContainer.style.display = 'block';
-  resultsTable.style.display = 'none';
   progressBar.value = 0;
-  progressStatus.textContent = 'Initializing...';
+  progressBar.classList.add('progress-primary');
+  progressBar.classList.remove('progress-error');
+  progressStatus.textContent = 'Analyzing files...';
+  resultsTable.style.display = 'none';
   
-  // In a real implementation, this would call the backend to process the series
-  // For now, we'll just simulate progress and then show sample results
-  simulateProgress();
+  // Use the TMDB API key and access token from settings if available
+  const apiKey = getTmdbApiKey();
+  const accessToken = getTmdbAccessToken();
   
-  // This is where we would actually call the API
-  /*
+  // Call the API to analyze the series
+  // In a real implementation, this would be an API call
+  // For now, we'll simulate it with a timeout
   ipcRenderer.send('analyze-series', {
     directory: seriesDirectory,
-    imdbId: imdbId
+    tmdbId,
+    apiKey,
+    accessToken
   });
-  */
+  
+  // Simulate progress
+  simulateProgress();
 });
 
 // Simulate progress for demonstration purposes
@@ -379,7 +563,7 @@ function simulateProgress() {
     progressBar.value = progress;
     
     if (progress < 20) {
-      progressStatus.textContent = 'Downloading IMDB data...';
+      progressStatus.textContent = 'Downloading TMDB data...';
     } else if (progress < 40) {
       progressStatus.textContent = 'Scanning media files...';
     } else if (progress < 70) {
@@ -526,5 +710,158 @@ function fixFile(fileId, episodeId) {
   */
 }
 
-// Initialize the application
-init(); 
+// Add event listeners
+document.addEventListener('DOMContentLoaded', () => {
+  // Initialize the application
+  init();
+  
+  // Add Series button
+  addSeriesButton.addEventListener('click', () => {
+    // Clear the form
+    newSeriesDirectory.value = '';
+    newSeriesTitle.value = '';
+    newTmdbId.value = '';
+    newTmdbResults.style.display = 'none';
+    delete newSeriesDirectory.dataset.editIndex;
+    
+    // Show the modal
+    addSeriesModal.showModal();
+  });
+  
+  // Settings button
+  settingsButton.addEventListener('click', () => {
+    settingsModal.showModal();
+  });
+  
+  // Cancel Settings button
+  cancelSettingsButton.addEventListener('click', () => {
+    settingsModal.close();
+  });
+  
+  // Save Settings button
+  saveSettingsButton.addEventListener('click', () => {
+    saveSettings();
+    settingsModal.close();
+  });
+  
+  // New Series Title Lookup button
+  newLookupButton.addEventListener('click', () => {
+    const title = newSeriesTitle.value;
+    searchTmdb(title);
+  });
+  
+  // Series Title Lookup button
+  lookupButton.addEventListener('click', () => {
+    const title = seriesTitleInput.value;
+    searchTmdb(title);
+  });
+  
+  // Event Listeners - Add Series Modal
+  newBrowseButton.addEventListener('click', () => {
+    console.log('Browse button clicked');
+    ipcRenderer.send('select-directory');
+  });
+
+  cancelAddSeries.addEventListener('click', () => {
+    addSeriesModal.close();
+  });
+
+  confirmAddSeries.addEventListener('click', () => {
+    const directory = newSeriesDirectory.value;
+    const tmdbId = newTmdbId.value;
+    
+    // Validate directory
+    if (!directory) {
+      alert('Please select a directory.');
+      return;
+    }
+    
+    // Validate TMDB ID if provided
+    if (tmdbId && !tmdbId.match(/^\d+$/)) {
+      alert('Please enter a valid TMDB ID (numeric format) or leave it empty.');
+      return;
+    }
+    
+    // Check if we're editing or adding
+    const editIndex = newSeriesDirectory.dataset.editIndex;
+    if (editIndex !== undefined) {
+      // Update existing series
+      seriesList[editIndex].directory = directory;
+      seriesList[editIndex].tmdbId = tmdbId;
+      seriesList[editIndex].name = newSeriesTitle.value || extractTitleFromPath(directory);
+    } else {
+      // Add new series
+      const seriesName = newSeriesTitle.value || extractTitleFromPath(directory);
+      
+      seriesList.push({
+        directory,
+        tmdbId,
+        status: 'not-analyzed',
+        name: seriesName
+      });
+    }
+    
+    // Save and render
+    saveSeriesList();
+    renderSeriesTable();
+    
+    // Close the modal
+    addSeriesModal.close();
+  });
+
+  // Event Listeners - Series Details
+  browseButton.addEventListener('click', () => {
+    ipcRenderer.send('select-directory');
+  });
+
+  analyzeButton.addEventListener('click', () => {
+    const seriesDirectory = seriesDirectoryInput.value;
+    const tmdbId = tmdbIdInput.value;
+    
+    // Validate inputs
+    if (!seriesDirectory) {
+      alert('Please select a TV series directory.');
+      return;
+    }
+    
+    // Validate TMDB ID if provided
+    if (tmdbId && !tmdbId.match(/^\d+$/)) {
+      alert('Please enter a valid TMDB ID (numeric format) or leave it empty.');
+      return;
+    }
+    
+    // Update the current series
+    if (currentSeriesId !== null) {
+      seriesList[currentSeriesId].tmdbId = tmdbId;
+      seriesList[currentSeriesId].name = seriesTitleInput.value || extractTitleFromPath(seriesDirectory);
+      seriesList[currentSeriesId].status = 'in-progress';
+      saveSeriesList();
+      renderSeriesTable();
+    }
+    
+    // Show progress
+    progressContainer.style.display = 'block';
+    progressBar.value = 0;
+    progressBar.classList.add('progress-primary');
+    progressBar.classList.remove('progress-error');
+    progressStatus.textContent = 'Analyzing files...';
+    resultsTable.style.display = 'none';
+    
+    // Use the TMDB API key and access token from settings if available
+    const apiKey = getTmdbApiKey();
+    const accessToken = getTmdbAccessToken();
+    
+    // Call the API to analyze the series
+    // In a real implementation, this would be an API call
+    // For now, we'll simulate it with a timeout
+    ipcRenderer.send('analyze-series', {
+      directory: seriesDirectory,
+      tmdbId,
+      apiKey,
+      accessToken
+    });
+    
+    // Simulate progress
+    simulateProgress();
+  });
+}); 

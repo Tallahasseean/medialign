@@ -13,6 +13,10 @@ async function initialize() {
     await db.initDatabase();
     console.log('Database initialized');
     
+    // Clear expired cache entries
+    await db.clearExpiredCache();
+    console.log('Cleared expired cache entries');
+    
     // Set up IPC handlers
     setupIpcHandlers();
     

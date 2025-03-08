@@ -5,6 +5,48 @@
   <title>MediaAlign - TV Series Episode Alignment Tool</title>
   <!-- Local styles only -->
   <link rel="stylesheet" href="styles.css">
+  
+  <!-- Custom styles for expandable rows -->
+  <style>
+    .series-row {
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+    
+    .series-row:hover {
+      background-color: rgba(59, 130, 246, 0.05);
+    }
+    
+    .expanded-row {
+      background-color: rgba(229, 231, 235, 0.5);
+      animation: fadeIn 0.3s ease-in-out;
+    }
+    
+    .expanded-row:hover {
+      background-color: rgba(229, 231, 235, 0.8);
+    }
+    
+    .directory-row {
+      cursor: pointer;
+    }
+    
+    .directory-row:hover {
+      background-color: rgba(59, 130, 246, 0.05);
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-5px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .transform {
+      transition: transform 0.2s;
+    }
+    
+    .rotate-90 {
+      transform: rotate(90deg);
+    }
+  </style>
 </head>
 <body>
   <div class="container mx-auto px-4 py-8">

@@ -1,8 +1,26 @@
 const axios = require('axios');
+const db = require('./database');
+
+// Cache expiration time (in milliseconds)
+const CACHE_EXPIRATION = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 // Base URLs for TMDB API
 const API_BASE_URL = 'https://api.themoviedb.org/3';
 const IMAGE_BASE_URL = 'https://image.tmdb.org/t/p';
+
+/**
+ * Check if a cache entry is still valid
+ * @param {Date} lastUpdated - Date when the cache was last updated
+ * @returns {boolean} - True if cache is still valid, false if expired
+ */
+function isCacheValid(lastUpdated) {
+  if (!lastUpdated) return false;
+  
+  const now = new Date();
+  const expirationTime = new Date(lastUpdated.getTime() + CACHE_EXPIRATION);
+  
+  return now < expirationTime;
+}
 
 /**
  * Make a request to the TMDB API
@@ -56,31 +74,53 @@ async function makeRequest(endpoint, params = {}, apiKey = '', accessToken = '')
  * @returns {Promise<Object>} - Series information
  */
 async function getSeriesInfo(tmdbId, apiKey = '', accessToken = '') {
-  // API endpoint documentation: https://developer.themoviedb.org/reference/tv-series-details
-  const data = await makeRequest(`/tv/${tmdbId}`, {
-    language: 'en-US',
-    append_to_response: 'external_ids'
-  }, apiKey, accessToken);
-  
-  return {
-    tmdbId: data.id,
-    imdbId: data.external_ids?.imdb_id || null,
-    title: data.name,
-    originalTitle: data.original_name,
-    year: data.first_air_date ? data.first_air_date.substring(0, 4) : '',
-    totalSeasons: data.number_of_seasons,
-    totalEpisodes: data.number_of_episodes,
-    status: data.status,
-    plot: data.overview,
-    genres: data.genres.map(genre => genre.name),
-    networks: data.networks.map(network => network.name),
-    popularity: data.popularity,
-    voteAverage: data.vote_average,
-    posterPath: data.poster_path,
-    backdropPath: data.backdrop_path,
-    poster: data.poster_path ? `${IMAGE_BASE_URL}/w500${data.poster_path}` : null,
-    backdrop: data.backdrop_path ? `${IMAGE_BASE_URL}/original${data.backdrop_path}` : null
-  };
+  try {
+    // Check cache first
+    const cachedData = await db.getCachedSeriesInfo(tmdbId);
+    
+    if (cachedData && isCacheValid(cachedData.lastUpdated)) {
+      console.log(`Using cached data for series ${tmdbId}`);
+      return cachedData.data;
+    }
+    
+    // Cache miss or expired, fetch from API
+    console.log(`Fetching series ${tmdbId} data from TMDB API`);
+    
+    // API endpoint documentation: https://developer.themoviedb.org/reference/tv-series-details
+    const data = await makeRequest(`/tv/${tmdbId}`, {
+      language: 'en-US',
+      append_to_response: 'external_ids'
+    }, apiKey, accessToken);
+    
+    // Format the data
+    const formattedData = {
+      tmdbId: data.id,
+      imdbId: data.external_ids?.imdb_id || null,
+      title: data.name,
+      originalTitle: data.original_name,
+      year: data.first_air_date ? data.first_air_date.substring(0, 4) : '',
+      totalSeasons: data.number_of_seasons,
+      totalEpisodes: data.number_of_episodes,
+      status: data.status,
+      plot: data.overview,
+      genres: data.genres.map(genre => genre.name),
+      networks: data.networks.map(network => network.name),
+      popularity: data.popularity,
+      voteAverage: data.vote_average,
+      posterPath: data.poster_path,
+      backdropPath: data.backdrop_path,
+      poster: data.poster_path ? `${IMAGE_BASE_URL}/w500${data.poster_path}` : null,
+      backdrop: data.backdrop_path ? `${IMAGE_BASE_URL}/original${data.backdrop_path}` : null
+    };
+    
+    // Cache the formatted data
+    await db.cacheSeriesInfo(tmdbId, formattedData);
+    
+    return formattedData;
+  } catch (error) {
+    console.error(`Error getting series info for ${tmdbId}:`, error);
+    throw error;
+  }
 }
 
 /**
@@ -92,32 +132,54 @@ async function getSeriesInfo(tmdbId, apiKey = '', accessToken = '') {
  * @returns {Promise<Array>} - Array of episodes for the season
  */
 async function getSeasonInfo(tmdbId, seasonNumber, apiKey = '', accessToken = '') {
-  // API endpoint documentation: https://developer.themoviedb.org/reference/tv-season-details
-  const data = await makeRequest(`/tv/${tmdbId}/season/${seasonNumber}`, {
-    language: 'en-US'
-  }, apiKey, accessToken);
-  
-  return {
-    seasonId: data.id,
-    name: data.name,
-    overview: data.overview,
-    seasonNumber: data.season_number,
-    airDate: data.air_date,
-    posterPath: data.poster_path,
-    poster: data.poster_path ? `${IMAGE_BASE_URL}/w500${data.poster_path}` : null,
-    episodes: data.episodes.map(episode => ({
-      episodeId: episode.id,
-      name: episode.name,
-      overview: episode.overview || '',
-      airDate: episode.air_date,
-      episodeNumber: episode.episode_number,
-      seasonNumber: episode.season_number,
-      stillPath: episode.still_path,
-      still: episode.still_path ? `${IMAGE_BASE_URL}/w300${episode.still_path}` : null,
-      voteAverage: episode.vote_average,
-      runtime: episode.runtime
-    }))
-  };
+  try {
+    // Check cache first
+    const cachedData = await db.getCachedSeasonInfo(tmdbId, seasonNumber);
+    
+    if (cachedData && isCacheValid(cachedData.lastUpdated)) {
+      console.log(`Using cached data for series ${tmdbId} season ${seasonNumber}`);
+      return cachedData.data;
+    }
+    
+    // Cache miss or expired, fetch from API
+    console.log(`Fetching season ${seasonNumber} data for series ${tmdbId} from TMDB API`);
+    
+    // API endpoint documentation: https://developer.themoviedb.org/reference/tv-season-details
+    const data = await makeRequest(`/tv/${tmdbId}/season/${seasonNumber}`, {
+      language: 'en-US'
+    }, apiKey, accessToken);
+    
+    // Format the data
+    const formattedData = {
+      seasonId: data.id,
+      name: data.name,
+      overview: data.overview,
+      seasonNumber: data.season_number,
+      airDate: data.air_date,
+      posterPath: data.poster_path,
+      poster: data.poster_path ? `${IMAGE_BASE_URL}/w500${data.poster_path}` : null,
+      episodes: data.episodes.map(episode => ({
+        episodeId: episode.id,
+        name: episode.name,
+        overview: episode.overview || '',
+        airDate: episode.air_date,
+        episodeNumber: episode.episode_number,
+        seasonNumber: episode.season_number,
+        stillPath: episode.still_path,
+        still: episode.still_path ? `${IMAGE_BASE_URL}/w300${episode.still_path}` : null,
+        voteAverage: episode.vote_average,
+        runtime: episode.runtime
+      }))
+    };
+    
+    // Cache the formatted data
+    await db.cacheSeasonInfo(tmdbId, seasonNumber, formattedData);
+    
+    return formattedData;
+  } catch (error) {
+    console.error(`Error getting season info for ${tmdbId} season ${seasonNumber}:`, error);
+    throw error;
+  }
 }
 
 /**

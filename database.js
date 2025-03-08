@@ -54,6 +54,34 @@ function initDatabase() {
         processed_at TIMESTAMP,
         FOREIGN KEY (series_id) REFERENCES series (id),
         FOREIGN KEY (episode_id) REFERENCES episodes (id)
+      )`);
+      
+      // Create TMDB series cache table
+      db.run(`CREATE TABLE IF NOT EXISTS tmdb_series_cache (
+        tmdb_id INTEGER PRIMARY KEY,
+        data TEXT NOT NULL,
+        last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )`);
+      
+      // Create TMDB season cache table
+      db.run(`CREATE TABLE IF NOT EXISTS tmdb_season_cache (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        tmdb_id INTEGER NOT NULL,
+        season_number INTEGER NOT NULL,
+        data TEXT NOT NULL,
+        last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(tmdb_id, season_number)
+      )`);
+      
+      // Create TMDB episode cache table
+      db.run(`CREATE TABLE IF NOT EXISTS tmdb_episode_cache (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        tmdb_id INTEGER NOT NULL,
+        season_number INTEGER NOT NULL,
+        episode_number INTEGER NOT NULL,
+        data TEXT NOT NULL,
+        last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(tmdb_id, season_number, episode_number)
       )`, (err) => {
         if (err) {
           reject(err);
@@ -214,6 +242,144 @@ function getProcessingSummary(seriesId) {
   });
 }
 
+// TMDB Cache Operations
+
+// Get cached series data
+function getCachedSeriesInfo(tmdbId) {
+  return new Promise((resolve, reject) => {
+    db.get(
+      'SELECT data, last_updated FROM tmdb_series_cache WHERE tmdb_id = ?',
+      [tmdbId],
+      (err, row) => {
+        if (err) {
+          reject(err);
+        } else if (!row) {
+          resolve(null); // No cached data found
+        } else {
+          try {
+            const parsedData = JSON.parse(row.data);
+            resolve({
+              data: parsedData,
+              lastUpdated: new Date(row.last_updated)
+            });
+          } catch (parseErr) {
+            reject(parseErr);
+          }
+        }
+      }
+    );
+  });
+}
+
+// Cache series data
+function cacheSeriesInfo(tmdbId, data) {
+  return new Promise((resolve, reject) => {
+    const serializedData = JSON.stringify(data);
+    
+    db.run(
+      `INSERT OR REPLACE INTO tmdb_series_cache (tmdb_id, data, last_updated)
+       VALUES (?, ?, CURRENT_TIMESTAMP)`,
+      [tmdbId, serializedData],
+      function(err) {
+        if (err) {
+          reject(err);
+        } else {
+          resolve();
+        }
+      }
+    );
+  });
+}
+
+// Get cached season data
+function getCachedSeasonInfo(tmdbId, seasonNumber) {
+  return new Promise((resolve, reject) => {
+    db.get(
+      'SELECT data, last_updated FROM tmdb_season_cache WHERE tmdb_id = ? AND season_number = ?',
+      [tmdbId, seasonNumber],
+      (err, row) => {
+        if (err) {
+          reject(err);
+        } else if (!row) {
+          resolve(null); // No cached data found
+        } else {
+          try {
+            const parsedData = JSON.parse(row.data);
+            resolve({
+              data: parsedData,
+              lastUpdated: new Date(row.last_updated)
+            });
+          } catch (parseErr) {
+            reject(parseErr);
+          }
+        }
+      }
+    );
+  });
+}
+
+// Cache season data
+function cacheSeasonInfo(tmdbId, seasonNumber, data) {
+  return new Promise((resolve, reject) => {
+    const serializedData = JSON.stringify(data);
+    
+    db.run(
+      `INSERT OR REPLACE INTO tmdb_season_cache (tmdb_id, season_number, data, last_updated)
+       VALUES (?, ?, ?, CURRENT_TIMESTAMP)`,
+      [tmdbId, seasonNumber, serializedData],
+      function(err) {
+        if (err) {
+          reject(err);
+        } else {
+          resolve();
+        }
+      }
+    );
+  });
+}
+
+// Clear expired cache entries
+function clearExpiredCache(expirationDays = 30) {
+  return new Promise((resolve, reject) => {
+    const expirationTimestamp = new Date();
+    expirationTimestamp.setDate(expirationTimestamp.getDate() - expirationDays);
+    
+    db.serialize(() => {
+      // Clear expired series cache
+      db.run(
+        'DELETE FROM tmdb_series_cache WHERE last_updated < ?',
+        [expirationTimestamp.toISOString()],
+        (err) => {
+          if (err) console.error('Error clearing expired series cache:', err);
+        }
+      );
+      
+      // Clear expired season cache
+      db.run(
+        'DELETE FROM tmdb_season_cache WHERE last_updated < ?',
+        [expirationTimestamp.toISOString()],
+        (err) => {
+          if (err) console.error('Error clearing expired season cache:', err);
+        }
+      );
+      
+      // Clear expired episode cache
+      db.run(
+        'DELETE FROM tmdb_episode_cache WHERE last_updated < ?',
+        [expirationTimestamp.toISOString()],
+        (err) => {
+          if (err) {
+            console.error('Error clearing expired episode cache:', err);
+            reject(err);
+          } else {
+            resolve();
+          }
+        }
+      );
+    });
+  });
+}
+
 // Close database connection
 function closeDatabase() {
   return new Promise((resolve, reject) => {
@@ -238,5 +404,10 @@ module.exports = {
   updateFileStatus,
   getFiles,
   getProcessingSummary,
+  getCachedSeriesInfo,
+  cacheSeriesInfo,
+  getCachedSeasonInfo,
+  cacheSeasonInfo,
+  clearExpiredCache,
   closeDatabase
 }; 

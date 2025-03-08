@@ -367,12 +367,31 @@ function renderSeriesTable() {
   // Add each series to the table
   seriesList.forEach((series, index) => {
     const row = document.createElement('tr');
+    row.dataset.seriesIndex = index;
+    row.dataset.isExpanded = 'false';
+    row.classList.add('series-row');
     
     // Series Name
     const nameCell = document.createElement('td');
     const dirParts = series.directory.split(/[\/\\]/);
     const dirName = dirParts[dirParts.length - 1] || 'Unknown';
-    nameCell.textContent = series.name || dirName;
+    
+    // Add expand/collapse indicator
+    const nameContent = document.createElement('div');
+    nameContent.className = 'flex items-center gap-2';
+    
+    const expandIcon = document.createElement('svg');
+    expandIcon.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    expandIcon.setAttribute('fill', 'none');
+    expandIcon.setAttribute('viewBox', '0 0 24 24');
+    expandIcon.setAttribute('stroke-width', '1.5');
+    expandIcon.setAttribute('stroke', 'currentColor');
+    expandIcon.setAttribute('class', 'w-4 h-4 transform transition-transform');
+    expandIcon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />';
+    
+    nameContent.appendChild(expandIcon);
+    nameContent.appendChild(document.createTextNode(series.name || dirName));
+    nameCell.appendChild(nameContent);
     
     // Directory
     const dirCell = document.createElement('td');
@@ -402,7 +421,8 @@ function renderSeriesTable() {
     const analyzeBtn = document.createElement('button');
     analyzeBtn.className = 'btn btn-xs btn-primary';
     analyzeBtn.textContent = 'Analyze';
-    analyzeBtn.addEventListener('click', () => {
+    analyzeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
       showSeriesDetails(index);
     });
     
@@ -414,7 +434,8 @@ function renderSeriesTable() {
         <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
       </svg>
     `;
-    editBtn.addEventListener('click', () => {
+    editBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
       editSeries(index);
     });
     
@@ -426,7 +447,8 @@ function renderSeriesTable() {
         <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
       </svg>
     `;
-    deleteBtn.addEventListener('click', () => {
+    deleteBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
       deleteSeries(index);
     });
     
@@ -442,7 +464,344 @@ function renderSeriesTable() {
     row.appendChild(actionsCell);
     
     seriesTableBody.appendChild(row);
+    
+    // Add click event to expand/collapse the row
+    row.addEventListener('click', () => {
+      toggleSeriesExpansion(row, series);
+    });
   });
+}
+
+// Toggle series expansion to show subdirectories and files
+async function toggleSeriesExpansion(row, series) {
+  const isExpanded = row.dataset.isExpanded === 'true';
+  const seriesIndex = parseInt(row.dataset.seriesIndex);
+  const expandIcon = row.querySelector('svg');
+  
+  // Remove any existing expanded content
+  const existingExpandedRows = document.querySelectorAll(`tr[data-parent-index="${seriesIndex}"][data-level="1"]`);
+  existingExpandedRows.forEach(row => {
+    // Also remove any child rows
+    const childRows = document.querySelectorAll(`tr[data-parent-path^="${row.dataset.path}"]`);
+    childRows.forEach(childRow => childRow.remove());
+    row.remove();
+  });
+  
+  if (!isExpanded) {
+    // Set to expanded
+    row.dataset.isExpanded = 'true';
+    expandIcon.classList.add('rotate-90');
+    
+    try {
+      // Show loading indicator
+      const loadingRow = document.createElement('tr');
+      loadingRow.dataset.parentIndex = seriesIndex;
+      loadingRow.dataset.level = '1';
+      
+      const loadingCell = document.createElement('td');
+      loadingCell.colSpan = 5;
+      loadingCell.innerHTML = `
+        <div class="flex justify-center items-center py-2">
+          <span class="loading loading-spinner loading-sm mr-2"></span>
+          <span>Loading directory contents...</span>
+        </div>
+      `;
+      
+      loadingRow.appendChild(loadingCell);
+      row.after(loadingRow);
+      
+      // Scan the directory
+      await expandDirectory(row, series.directory, 1, seriesIndex);
+      
+      // Remove loading indicator
+      loadingRow.remove();
+    } catch (error) {
+      console.error('Error expanding directory:', error);
+      
+      // Show error message
+      const errorRow = document.createElement('tr');
+      errorRow.dataset.parentIndex = seriesIndex;
+      errorRow.dataset.level = '1';
+      
+      const errorCell = document.createElement('td');
+      errorCell.colSpan = 5;
+      errorCell.innerHTML = `
+        <div class="text-error p-2">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 inline-block mr-1">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+          </svg>
+          Error loading directory: ${error.message}
+        </div>
+      `;
+      
+      errorRow.appendChild(errorCell);
+      row.after(errorRow);
+    }
+  } else {
+    // Set to collapsed
+    row.dataset.isExpanded = 'false';
+    expandIcon.classList.remove('rotate-90');
+  }
+}
+
+// Toggle subdirectory expansion
+async function toggleSubdirectoryExpansion(row) {
+  const isExpanded = row.dataset.isExpanded === 'true';
+  const currentPath = row.dataset.path;
+  const currentLevel = parseInt(row.dataset.level);
+  const expandIcon = row.querySelector('.directory-icon');
+  
+  // Remove any existing expanded content
+  const existingExpandedRows = document.querySelectorAll(`tr[data-parent-path="${currentPath}"]`);
+  existingExpandedRows.forEach(row => {
+    // Also remove any child rows
+    const childRows = document.querySelectorAll(`tr[data-parent-path^="${row.dataset.path}"]`);
+    childRows.forEach(childRow => childRow.remove());
+    row.remove();
+  });
+  
+  if (!isExpanded) {
+    // Set to expanded
+    row.dataset.isExpanded = 'true';
+    expandIcon.classList.add('rotate-90');
+    
+    try {
+      // Show loading indicator
+      const loadingRow = document.createElement('tr');
+      loadingRow.dataset.parentPath = currentPath;
+      loadingRow.dataset.level = (currentLevel + 1).toString();
+      
+      const loadingCell = document.createElement('td');
+      loadingCell.colSpan = 5;
+      loadingCell.innerHTML = `
+        <div class="flex justify-center items-center py-2">
+          <span class="loading loading-spinner loading-sm mr-2"></span>
+          <span>Loading directory contents...</span>
+        </div>
+      `;
+      
+      loadingRow.appendChild(loadingCell);
+      row.after(loadingRow);
+      
+      // Scan the directory
+      await expandDirectory(row, currentPath, currentLevel + 1, row.dataset.parentIndex);
+      
+      // Remove loading indicator
+      loadingRow.remove();
+    } catch (error) {
+      console.error('Error expanding subdirectory:', error);
+      
+      // Show error message
+      const errorRow = document.createElement('tr');
+      errorRow.dataset.parentPath = currentPath;
+      errorRow.dataset.level = (currentLevel + 1).toString();
+      
+      const errorCell = document.createElement('td');
+      errorCell.colSpan = 5;
+      errorCell.innerHTML = `
+        <div class="text-error p-2">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 inline-block mr-1">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+          </svg>
+          Error loading subdirectory: ${error.message}
+        </div>
+      `;
+      
+      errorRow.appendChild(errorCell);
+      row.after(errorRow);
+    }
+  } else {
+    // Set to collapsed
+    row.dataset.isExpanded = 'false';
+    expandIcon.classList.remove('rotate-90');
+  }
+}
+
+// Generic function to expand a directory at any level
+async function expandDirectory(parentRow, directoryPath, level, parentIndex) {
+  try {
+    // Don't go too deep
+    if (level > 4) {
+      console.warn('Maximum directory depth reached');
+      return;
+    }
+    
+    // Get the next row after parent row
+    let nextRow = parentRow.nextElementSibling;
+    
+    // Use file-scanner.js functionality to scan the directory
+    const fs = require('fs');
+    const path = require('path');
+    const util = require('util');
+    const { isVideoFile } = require('./file-scanner');
+    
+    const readdir = util.promisify(fs.readdir);
+    const stat = util.promisify(fs.stat);
+    
+    // Scan the directory
+    const dirItems = await readdir(directoryPath);
+    
+    // Get stats for all items
+    const itemsWithStats = await Promise.all(
+      dirItems.map(async (item) => {
+        const itemPath = path.join(directoryPath, item);
+        const itemStat = await stat(itemPath);
+        return {
+          name: item,
+          path: itemPath,
+          isDirectory: itemStat.isDirectory(),
+          isVideo: !itemStat.isDirectory() && isVideoFile(itemPath),
+          size: itemStat.size,
+          mtime: itemStat.mtime
+        };
+      })
+    );
+    
+    // Filter and sort: directories first, then video files
+    const sortedItems = itemsWithStats
+      .filter(item => item.isDirectory || item.isVideo)
+      .sort((a, b) => {
+        // Directories first
+        if (a.isDirectory && !b.isDirectory) return -1;
+        if (!a.isDirectory && b.isDirectory) return 1;
+        
+        // Alphabetical sorting
+        return a.name.localeCompare(b.name);
+      });
+    
+    // Add each item as a row in the table
+    for (const item of sortedItems) {
+      const itemRow = document.createElement('tr');
+      itemRow.classList.add('expanded-row');
+      
+      // Set data attributes
+      if (level === 1) {
+        // First level items are children of the series
+        itemRow.dataset.parentIndex = parentIndex;
+        itemRow.dataset.level = level.toString();
+      } else {
+        // Deeper level items are children of a directory
+        itemRow.dataset.parentPath = directoryPath;
+        itemRow.dataset.level = level.toString();
+        itemRow.dataset.parentIndex = parentIndex;
+      }
+      
+      // Set the item's own path
+      itemRow.dataset.path = item.path;
+      
+      // If it's a directory, add expandable state
+      if (item.isDirectory) {
+        itemRow.dataset.isExpanded = 'false';
+        itemRow.classList.add('directory-row');
+      }
+      
+      // Indented name with icon
+      const nameCell = document.createElement('td');
+      const nameContent = document.createElement('div');
+      nameContent.className = 'flex items-center gap-2';
+      
+      // Calculate padding based on level
+      const padding = 12 * level;
+      nameContent.style.paddingLeft = `${padding}px`;
+      
+      // Icon based on type
+      if (item.isDirectory) {
+        nameContent.innerHTML = `
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 text-primary transform transition-transform directory-icon">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+          </svg>
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 text-primary ml-1">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
+          </svg>
+        `;
+      } else {
+        nameContent.innerHTML = `
+          <span class="w-4"></span>
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 text-secondary ml-1">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3.375 19.5h17.25m-17.25 0a1.125 1.125 0 01-1.125-1.125M3.375 19.5h1.5C5.496 19.5 6 18.996 6 18.375m-3.75 0V5.625m0 12.75v-1.5c0-.621.504-1.125 1.125-1.125m18.375 2.625V5.625m0 12.75c0 .621-.504 1.125-1.125 1.125m1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125m0 3.75h-1.5A1.125 1.125 0 0118 18.375M20.625 4.5H3.375m17.25 0c.621 0 1.125.504 1.125 1.125M20.625 4.5h-1.5C18.504 4.5 18 5.004 18 5.625m3.75 0v1.5c0 .621-.504 1.125-1.125 1.125M3.375 4.5c-.621 0-1.125.504-1.125 1.125M3.375 4.5h1.5C5.496 4.5 6 5.004 6 5.625m-3.75 0v1.5c0 .621.504 1.125 1.125 1.125m0 0h1.5m-1.5 0c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125m1.5-3.75C5.496 8.25 6 7.746 6 7.125v-1.5M4.875 8.25C5.496 8.25 6 8.754 6 9.375v1.5m0-5.25v5.25m0-5.25C6 5.004 6.504 4.5 7.125 4.5h9.75c.621 0 1.125.504 1.125 1.125m1.125 2.625h1.5m-1.5 0A1.125 1.125 0 0118 7.125v-1.5m1.125 2.625c-.621 0-1.125.504-1.125 1.125v1.5m2.625-2.625c.621 0 1.125.504 1.125 1.125v1.5c0 .621-.504 1.125-1.125 1.125M18 5.625v5.25M7.125 12h9.75m-9.75 0A1.125 1.125 0 016 10.875M7.125 12C6.504 12 6 12.504 6 13.125m0-2.25C6 11.496 5.496 12 4.875 12M18 10.875c0 .621-.504 1.125-1.125 1.125M18 10.875c0 .621.504 1.125 1.125 1.125m-2.25 0c.621 0 1.125.504 1.125 1.125m-12 5.25v-5.25m0 5.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125m-12 0v-1.5c0-.621-.504-1.125-1.125-1.125M18 18.375v-5.25m0 5.25v-1.5c0-.621.504-1.125 1.125-1.125M18 13.125v1.5c0 .621.504 1.125 1.125 1.125M18 13.125c0-.621.504-1.125 1.125-1.125M6 13.125v1.5c0 .621-.504 1.125-1.125 1.125M6 13.125C6 12.504 5.496 12 4.875 12m-1.5 0h1.5m-1.5 0c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125M19.125 12h1.5m0 0c.621 0 1.125.504 1.125 1.125v1.5c0 .621-.504 1.125-1.125 1.125m-17.25 0h1.5m14.25 0h1.5" />
+          </svg>
+        `;
+      }
+      
+      nameContent.appendChild(document.createTextNode(item.name));
+      nameCell.appendChild(nameContent);
+      
+      // Path
+      const pathCell = document.createElement('td');
+      pathCell.textContent = item.path;
+      pathCell.className = 'text-xs';
+      
+      // Empty TMDB ID cell
+      const tmdbCell = document.createElement('td');
+      tmdbCell.textContent = '-';
+      
+      // Type/Info
+      const typeCell = document.createElement('td');
+      if (item.isDirectory) {
+        typeCell.innerHTML = '<span class="badge badge-primary">Directory</span>';
+      } else {
+        // Format file size
+        const sizeInMB = (item.size / (1024 * 1024)).toFixed(2);
+        typeCell.innerHTML = `<span class="badge badge-secondary">Video (${sizeInMB} MB)</span>`;
+      }
+      
+      // Actions cell (empty for now, could add actions later)
+      const actionsCell = document.createElement('td');
+      
+      itemRow.appendChild(nameCell);
+      itemRow.appendChild(pathCell);
+      itemRow.appendChild(tmdbCell);
+      itemRow.appendChild(typeCell);
+      itemRow.appendChild(actionsCell);
+      
+      nextRow = nextRow ? nextRow.after(itemRow) : parentRow.after(itemRow);
+      nextRow = itemRow;
+      
+      // Add click event for directories to make them expandable
+      if (item.isDirectory) {
+        itemRow.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          await toggleSubdirectoryExpansion(itemRow);
+        });
+      }
+    }
+    
+    // If no items found
+    if (sortedItems.length === 0) {
+      const emptyRow = document.createElement('tr');
+      emptyRow.classList.add('expanded-row');
+      
+      if (level === 1) {
+        emptyRow.dataset.parentIndex = parentIndex;
+        emptyRow.dataset.level = level.toString();
+      } else {
+        emptyRow.dataset.parentPath = directoryPath;
+        emptyRow.dataset.level = level.toString();
+        emptyRow.dataset.parentIndex = parentIndex;
+      }
+      
+      const emptyCell = document.createElement('td');
+      emptyCell.colSpan = 5;
+      
+      // Add appropriate indentation
+      const padding = 12 * level;
+      
+      emptyCell.innerHTML = `
+        <div class="text-center py-2 text-base-content opacity-60" style="padding-left: ${padding}px">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 inline-block mr-1">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 01-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 011.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 00-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 01-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5a3.375 3.375 0 00-3.375-3.375H9.75" />
+          </svg>
+          No subdirectories or video files found in this directory
+        </div>
+      `;
+      
+      emptyRow.appendChild(emptyCell);
+      nextRow = nextRow ? nextRow.after(emptyRow) : parentRow.after(emptyRow);
+    }
+  } catch (error) {
+    console.error('Error expanding directory:', error);
+    throw error;
+  }
 }
 
 // Show series details for analysis

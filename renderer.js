@@ -187,9 +187,33 @@ function displaySearchResults(results, resultsListElement, resultsContainer, tmd
       
       const link = document.createElement('a');
       link.href = '#';
-      link.className = 'flex justify-between items-center p-2 hover:bg-base-300 rounded';
+      link.className = 'flex items-start gap-3 p-2 hover:bg-base-300 rounded';
       
+      // Add poster image if available
+      if (result.poster) {
+        const imgContainer = document.createElement('div');
+        imgContainer.className = 'flex-none w-12';
+        
+        const img = document.createElement('img');
+        img.src = result.poster;
+        img.alt = result.title;
+        img.className = 'rounded';
+        
+        imgContainer.appendChild(img);
+        link.appendChild(imgContainer);
+      }
+      
+      // Content container
+      const contentDiv = document.createElement('div');
+      contentDiv.className = 'flex-1';
+      
+      // Title container
+      const titleContainer = document.createElement('div');
+      titleContainer.className = 'flex justify-between items-start';
+      
+      // Title and year
       const titleDiv = document.createElement('div');
+      titleDiv.className = 'pr-2';
       
       const title = document.createElement('span');
       title.textContent = result.title;
@@ -199,15 +223,30 @@ function displaySearchResults(results, resultsListElement, resultsContainer, tmd
       year.textContent = result.year ? ` (${result.year})` : '';
       year.className = 'text-sm opacity-70';
       
-      const id = document.createElement('span');
-      id.textContent = result.id;
-      id.className = 'text-xs opacity-50';
-      
       titleDiv.appendChild(title);
       titleDiv.appendChild(year);
       
-      link.appendChild(titleDiv);
-      link.appendChild(id);
+      // ID badge
+      const idBadge = document.createElement('span');
+      idBadge.textContent = `ID: ${result.id}`;
+      idBadge.className = 'badge badge-sm badge-neutral';
+      
+      titleContainer.appendChild(titleDiv);
+      titleContainer.appendChild(idBadge);
+      
+      contentDiv.appendChild(titleContainer);
+      
+      // Add overview if available
+      if (result.overview) {
+        const overview = document.createElement('p');
+        overview.textContent = result.overview.length > 120 ? 
+          result.overview.substring(0, 120) + '...' : 
+          result.overview;
+        overview.className = 'text-xs mt-1 text-base-content opacity-70';
+        contentDiv.appendChild(overview);
+      }
+      
+      link.appendChild(contentDiv);
       
       link.addEventListener('click', (e) => {
         e.preventDefault();
@@ -215,6 +254,10 @@ function displaySearchResults(results, resultsListElement, resultsContainer, tmd
         tmdbIdInput.value = result.id;
         // Hide the results
         resultsContainer.style.display = 'none';
+        
+        // Trigger a change event on the input to ensure other handlers are aware
+        const event = new Event('change', { bubbles: true });
+        tmdbIdInput.dispatchEvent(event);
       });
       
       li.appendChild(link);
@@ -273,8 +316,8 @@ function searchTmdb(title) {
   const apiKey = getTmdbApiKey();
   const accessToken = getTmdbAccessToken();
   
-  if (!apiKey) {
-    alert('Please set your TMDB API key in Settings first.');
+  if (!apiKey && !accessToken) {
+    alert('Please set your TMDB API key or Read Access Token in Settings first.');
     settingsModal.showModal();
     return;
   }
@@ -283,6 +326,20 @@ function searchTmdb(title) {
     alert('Please enter a TV show title to search.');
     return;
   }
+  
+  // Determine which result containers to use based on current context
+  let resultsContainer, resultsListElement;
+  if (addSeriesModal.open) {
+    resultsContainer = newTmdbResults;
+    resultsListElement = newResultsList;
+  } else {
+    resultsContainer = tmdbResults;
+    resultsListElement = resultsList;
+  }
+  
+  // Show loading indicator
+  resultsContainer.style.display = 'block';
+  resultsListElement.innerHTML = '<li class="p-4 text-center"><span class="loading loading-spinner loading-md"></span><p class="mt-2">Searching...</p></li>';
   
   // Send IPC message to search TMDB
   ipcRenderer.send('search-tmdb', {
@@ -420,6 +477,9 @@ function editSeries(index) {
   // Store the index for later use
   newSeriesDirectory.dataset.editIndex = index;
   
+  // Change the confirm button text to indicate editing
+  confirmAddSeries.textContent = 'Update Series';
+  
   // Show the modal
   addSeriesModal.showModal();
 }
@@ -433,126 +493,200 @@ function deleteSeries(index) {
   }
 }
 
-// Event Listeners - Main UI
-addSeriesButton.addEventListener('click', () => {
-  // Clear the modal values
-  newSeriesDirectory.value = '';
-  newSeriesTitle.value = '';
-  newTmdbId.value = '';
-  newTmdbResults.style.display = 'none';
-  delete newSeriesDirectory.dataset.editIndex;
+// Event Listeners
+document.addEventListener('DOMContentLoaded', () => {
+  // Initialize the application
+  init();
   
-  // Show the modal
-  addSeriesModal.showModal();
-});
-
-// Event Listeners - Add Series Modal
-newBrowseButton.addEventListener('click', () => {
-  console.log('Browse button clicked');
-  ipcRenderer.send('select-directory');
-});
-
-cancelAddSeries.addEventListener('click', () => {
-  addSeriesModal.close();
-});
-
-confirmAddSeries.addEventListener('click', () => {
-  const directory = newSeriesDirectory.value;
-  const tmdbId = newTmdbId.value;
-  
-  // Validate directory
-  if (!directory) {
-    alert('Please select a directory.');
-    return;
-  }
-  
-  // Validate TMDB ID if provided
-  if (tmdbId && !tmdbId.match(/^\d+$/)) {
-    alert('Please enter a valid TMDB ID (numeric format) or leave it empty.');
-    return;
-  }
-  
-  // Check if we're editing or adding
-  const editIndex = newSeriesDirectory.dataset.editIndex;
-  if (editIndex !== undefined) {
-    // Update existing series
-    seriesList[editIndex].directory = directory;
-    seriesList[editIndex].tmdbId = tmdbId;
-    seriesList[editIndex].name = newSeriesTitle.value || extractTitleFromPath(directory);
-  } else {
-    // Add new series
-    const seriesName = newSeriesTitle.value || extractTitleFromPath(directory);
+  // Add Series button
+  addSeriesButton.addEventListener('click', () => {
+    // Clear the form
+    newSeriesDirectory.value = '';
+    newSeriesTitle.value = '';
+    newTmdbId.value = '';
+    newTmdbResults.style.display = 'none';
+    delete newSeriesDirectory.dataset.editIndex;
     
-    seriesList.push({
-      directory,
-      tmdbId,
-      status: 'not-analyzed',
-      name: seriesName
-    });
-  }
-  
-  // Save and render
-  saveSeriesList();
-  renderSeriesTable();
-  
-  // Close the modal
-  addSeriesModal.close();
-});
-
-// Event Listeners - Series Details
-browseButton.addEventListener('click', () => {
-  ipcRenderer.send('select-directory');
-});
-
-analyzeButton.addEventListener('click', () => {
-  const seriesDirectory = seriesDirectoryInput.value;
-  const tmdbId = tmdbIdInput.value;
-  
-  // Validate inputs
-  if (!seriesDirectory) {
-    alert('Please select a TV series directory.');
-    return;
-  }
-  
-  // Validate TMDB ID if provided
-  if (tmdbId && !tmdbId.match(/^\d+$/)) {
-    alert('Please enter a valid TMDB ID (numeric format) or leave it empty.');
-    return;
-  }
-  
-  // Update the current series
-  if (currentSeriesId !== null) {
-    seriesList[currentSeriesId].tmdbId = tmdbId;
-    seriesList[currentSeriesId].name = seriesTitleInput.value || extractTitleFromPath(seriesDirectory);
-    seriesList[currentSeriesId].status = 'in-progress';
-    saveSeriesList();
-    renderSeriesTable();
-  }
-  
-  // Show progress
-  progressContainer.style.display = 'block';
-  progressBar.value = 0;
-  progressBar.classList.add('progress-primary');
-  progressBar.classList.remove('progress-error');
-  progressStatus.textContent = 'Analyzing files...';
-  resultsTable.style.display = 'none';
-  
-  // Use the TMDB API key and access token from settings if available
-  const apiKey = getTmdbApiKey();
-  const accessToken = getTmdbAccessToken();
-  
-  // Call the API to analyze the series
-  // In a real implementation, this would be an API call
-  // For now, we'll simulate it with a timeout
-  ipcRenderer.send('analyze-series', {
-    directory: seriesDirectory,
-    tmdbId,
-    apiKey,
-    accessToken
+    // Reset the confirm button text to indicate adding
+    confirmAddSeries.textContent = 'Add Series';
+    
+    // Show the modal
+    addSeriesModal.showModal();
   });
   
-  // Simulate progress
-  simulateProgress();
+  // Settings button
+  settingsButton.addEventListener('click', () => {
+    settingsModal.showModal();
+  });
+  
+  // Cancel Settings button
+  cancelSettingsButton.addEventListener('click', () => {
+    settingsModal.close();
+  });
+  
+  // Save Settings button
+  saveSettingsButton.addEventListener('click', async () => {
+    const apiKey = tmdbApiKeyInput.value.trim();
+    const accessToken = tmdbAccessTokenInput.value.trim();
+    
+    // At least one credential must be provided
+    if (!apiKey && !accessToken) {
+      alert('Please provide either a TMDB API key or a Read Access Token.');
+      return;
+    }
+    
+    // Show loading state
+    saveSettingsButton.disabled = true;
+    saveSettingsButton.innerHTML = '<span class="loading loading-spinner loading-xs mr-2"></span> Validating...';
+    
+    try {
+      // Validate the credentials with TMDB
+      const response = await ipcRenderer.invoke('validate-tmdb-credentials', { apiKey, accessToken });
+      
+      if (response.valid) {
+        // Save valid credentials to localStorage
+        saveSettings();
+        settingsModal.close();
+        alert('TMDB API credentials validated and saved successfully!');
+      } else {
+        alert(`TMDB API validation failed: ${response.error}`);
+      }
+    } catch (error) {
+      alert(`Error validating TMDB credentials: ${error.message || 'Unknown error'}`);
+    } finally {
+      // Reset button state
+      saveSettingsButton.disabled = false;
+      saveSettingsButton.innerHTML = 'Save Settings';
+    }
+  });
+  
+  // New Series Title Lookup button
+  newLookupButton.addEventListener('click', () => {
+    const title = newSeriesTitle.value;
+    searchTmdb(title);
+  });
+  
+  // Series Title Lookup button
+  lookupButton.addEventListener('click', () => {
+    const title = seriesTitleInput.value;
+    searchTmdb(title);
+  });
+  
+  // Event Listeners - Add Series Modal
+  newBrowseButton.addEventListener('click', () => {
+    console.log('Browse button clicked');
+    ipcRenderer.send('select-directory');
+  });
+
+  cancelAddSeries.addEventListener('click', () => {
+    addSeriesModal.close();
+  });
+
+  //Confirm Add Series button click handler
+  confirmAddSeries.addEventListener('click', () => {
+    const directory = newSeriesDirectory.value;
+    const tmdbId = newTmdbId.value;
+    
+    // Validate directory
+    if (!directory) {
+      alert('Please select a directory.');
+      return;
+    }
+    
+    // Validate TMDB ID if provided
+    if (tmdbId && !tmdbId.match(/^\d+$/)) {
+      alert('Please enter a valid TMDB ID (numeric format) or use the search feature to select a show.');
+      return;
+    }
+    
+    // Check if we're editing or adding
+    const editIndex = newSeriesDirectory.dataset.editIndex;
+    if (editIndex !== undefined) {
+      // Update existing series
+      seriesList[editIndex].directory = directory;
+      seriesList[editIndex].tmdbId = tmdbId;
+      seriesList[editIndex].name = newSeriesTitle.value || extractTitleFromPath(directory);
+    } else {
+      // Add new series
+      const seriesName = newSeriesTitle.value || extractTitleFromPath(directory);
+      
+      seriesList.push({
+        directory,
+        tmdbId,
+        status: 'not-analyzed',
+        name: seriesName
+      });
+    }
+    
+    // Save and render
+    saveSeriesList();
+    renderSeriesTable();
+    
+    // Close the modal
+    addSeriesModal.close();
+  });
+
+  // Event Listeners - Series Details
+  browseButton.addEventListener('click', () => {
+    ipcRenderer.send('select-directory');
+  });
+
+  //Analyze button click handler
+  analyzeButton.addEventListener('click', () => {
+    const seriesDirectory = seriesDirectoryInput.value;
+    const tmdbId = tmdbIdInput.value;
+    
+    // Validate inputs
+    if (!seriesDirectory) {
+      alert('Please select a TV series directory.');
+      return;
+    }
+    
+    // Validate TMDB ID if provided
+    if (!tmdbId) {
+      alert('Please enter a TMDB ID or use the search feature to select a show.');
+      return;
+    }
+    
+    if (tmdbId && !tmdbId.match(/^\d+$/)) {
+      alert('Please enter a valid TMDB ID (numeric format) or use the search feature to select a show.');
+      return;
+    }
+    
+    // Update the current series
+    if (currentSeriesId !== null) {
+      seriesList[currentSeriesId].tmdbId = tmdbId;
+      seriesList[currentSeriesId].name = seriesTitleInput.value || extractTitleFromPath(seriesDirectory);
+      seriesList[currentSeriesId].status = 'in-progress';
+      saveSeriesList();
+      renderSeriesTable();
+    }
+    
+    // Show progress
+    progressContainer.style.display = 'block';
+    progressBar.value = 0;
+    progressBar.classList.add('progress-primary');
+    progressBar.classList.remove('progress-error');
+    progressStatus.textContent = 'Analyzing files...';
+    resultsTable.style.display = 'none';
+    
+    // Use the TMDB API key and access token from settings if available
+    const apiKey = getTmdbApiKey();
+    const accessToken = getTmdbAccessToken();
+    
+    // Call the API to analyze the series
+    // In a real implementation, this would be an API call
+    // For now, we'll simulate it with a timeout
+    ipcRenderer.send('analyze-series', {
+      directory: seriesDirectory,
+      tmdbId,
+      apiKey,
+      accessToken
+    });
+    
+    // Simulate progress
+    simulateProgress();
+  });
 });
 
 // Simulate progress for demonstration purposes
@@ -708,160 +842,4 @@ function fixFile(fileId, episodeId) {
     episodeId: episodeId
   });
   */
-}
-
-// Add event listeners
-document.addEventListener('DOMContentLoaded', () => {
-  // Initialize the application
-  init();
-  
-  // Add Series button
-  addSeriesButton.addEventListener('click', () => {
-    // Clear the form
-    newSeriesDirectory.value = '';
-    newSeriesTitle.value = '';
-    newTmdbId.value = '';
-    newTmdbResults.style.display = 'none';
-    delete newSeriesDirectory.dataset.editIndex;
-    
-    // Show the modal
-    addSeriesModal.showModal();
-  });
-  
-  // Settings button
-  settingsButton.addEventListener('click', () => {
-    settingsModal.showModal();
-  });
-  
-  // Cancel Settings button
-  cancelSettingsButton.addEventListener('click', () => {
-    settingsModal.close();
-  });
-  
-  // Save Settings button
-  saveSettingsButton.addEventListener('click', () => {
-    saveSettings();
-    settingsModal.close();
-  });
-  
-  // New Series Title Lookup button
-  newLookupButton.addEventListener('click', () => {
-    const title = newSeriesTitle.value;
-    searchTmdb(title);
-  });
-  
-  // Series Title Lookup button
-  lookupButton.addEventListener('click', () => {
-    const title = seriesTitleInput.value;
-    searchTmdb(title);
-  });
-  
-  // Event Listeners - Add Series Modal
-  newBrowseButton.addEventListener('click', () => {
-    console.log('Browse button clicked');
-    ipcRenderer.send('select-directory');
-  });
-
-  cancelAddSeries.addEventListener('click', () => {
-    addSeriesModal.close();
-  });
-
-  confirmAddSeries.addEventListener('click', () => {
-    const directory = newSeriesDirectory.value;
-    const tmdbId = newTmdbId.value;
-    
-    // Validate directory
-    if (!directory) {
-      alert('Please select a directory.');
-      return;
-    }
-    
-    // Validate TMDB ID if provided
-    if (tmdbId && !tmdbId.match(/^\d+$/)) {
-      alert('Please enter a valid TMDB ID (numeric format) or leave it empty.');
-      return;
-    }
-    
-    // Check if we're editing or adding
-    const editIndex = newSeriesDirectory.dataset.editIndex;
-    if (editIndex !== undefined) {
-      // Update existing series
-      seriesList[editIndex].directory = directory;
-      seriesList[editIndex].tmdbId = tmdbId;
-      seriesList[editIndex].name = newSeriesTitle.value || extractTitleFromPath(directory);
-    } else {
-      // Add new series
-      const seriesName = newSeriesTitle.value || extractTitleFromPath(directory);
-      
-      seriesList.push({
-        directory,
-        tmdbId,
-        status: 'not-analyzed',
-        name: seriesName
-      });
-    }
-    
-    // Save and render
-    saveSeriesList();
-    renderSeriesTable();
-    
-    // Close the modal
-    addSeriesModal.close();
-  });
-
-  // Event Listeners - Series Details
-  browseButton.addEventListener('click', () => {
-    ipcRenderer.send('select-directory');
-  });
-
-  analyzeButton.addEventListener('click', () => {
-    const seriesDirectory = seriesDirectoryInput.value;
-    const tmdbId = tmdbIdInput.value;
-    
-    // Validate inputs
-    if (!seriesDirectory) {
-      alert('Please select a TV series directory.');
-      return;
-    }
-    
-    // Validate TMDB ID if provided
-    if (tmdbId && !tmdbId.match(/^\d+$/)) {
-      alert('Please enter a valid TMDB ID (numeric format) or leave it empty.');
-      return;
-    }
-    
-    // Update the current series
-    if (currentSeriesId !== null) {
-      seriesList[currentSeriesId].tmdbId = tmdbId;
-      seriesList[currentSeriesId].name = seriesTitleInput.value || extractTitleFromPath(seriesDirectory);
-      seriesList[currentSeriesId].status = 'in-progress';
-      saveSeriesList();
-      renderSeriesTable();
-    }
-    
-    // Show progress
-    progressContainer.style.display = 'block';
-    progressBar.value = 0;
-    progressBar.classList.add('progress-primary');
-    progressBar.classList.remove('progress-error');
-    progressStatus.textContent = 'Analyzing files...';
-    resultsTable.style.display = 'none';
-    
-    // Use the TMDB API key and access token from settings if available
-    const apiKey = getTmdbApiKey();
-    const accessToken = getTmdbAccessToken();
-    
-    // Call the API to analyze the series
-    // In a real implementation, this would be an API call
-    // For now, we'll simulate it with a timeout
-    ipcRenderer.send('analyze-series', {
-      directory: seriesDirectory,
-      tmdbId,
-      apiKey,
-      accessToken
-    });
-    
-    // Simulate progress
-    simulateProgress();
-  });
-}); 
+} 

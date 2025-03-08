@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const processor = require('./processor');
 const axios = require('axios');
+const tmdbApi = require('./tmdb-api');
 
 // Keep a global reference of the window object to prevent garbage collection
 let mainWindow;
@@ -130,59 +131,54 @@ ipcMain.on('search-tmdb', async (event, data) => {
       throw new Error('Title is required');
     }
     
-    if (!apiKey) {
-      throw new Error('TMDB API key is required');
+    if (!apiKey && !accessToken) {
+      throw new Error('Either TMDB API key or Read Access Token is required');
     }
     
     console.log(`Searching TMDB for: ${title}`);
     
-    // This is where you would make an actual API call to TMDB
-    // For demonstration purposes, we'll use a mock response
-    // In a real application, you'd use axios or another HTTP client
-    
     try {
-      // Example API call using axios (uncomment and adjust for your actual API)
-      /*
-      // Headers for the request, including the access token if provided
-      const headers = {};
-      if (accessToken) {
-        headers['Authorization'] = `Bearer ${accessToken}`;
-      }
+      // Use our tmdb-api module to search
+      const results = await tmdbApi.searchSeries(title, apiKey, accessToken);
       
-      const response = await axios.get('https://api.themoviedb.org/3/search/tv', {
-        params: {
-          api_key: apiKey,
-          query: title
-        },
-        headers
-      });
-      
-      const results = response.data.results.map(item => ({
-        id: `tt${item.id}`, // Convert TMDB id to IMDB-like format for compatibility
-        title: item.name,
-        year: item.first_air_date ? item.first_air_date.substring(0, 4) : null
+      // Format results for the UI
+      const formattedResults = results.map(item => ({
+        id: item.id.toString(), // Convert to string for consistency
+        tmdbId: item.id,
+        title: item.title,
+        year: item.year,
+        overview: item.overview,
+        poster: item.poster,
+        popularity: item.popularity,
+        voteAverage: item.voteAverage
       }));
-      */
       
-      // Mock response for testing
-      const mockResults = [
-        { id: 'tt1399', title: 'Game of Thrones', year: '2011' },
-        { id: 'tt1520', title: 'The Walking Dead', year: '2010' },
-        { id: 'tt0455', title: 'Prison Break', year: '2005' }
-      ];
+      // Sort by popularity (highest first)
+      formattedResults.sort((a, b) => b.popularity - a.popularity);
       
-      // Simulate search by filtering mock results that include the title (case insensitive)
-      const filteredResults = mockResults.filter(
-        item => item.title.toLowerCase().includes(title.toLowerCase())
-      );
-      
-      event.reply('tmdb-search-result', filteredResults);
+      // Return top 10 results
+      event.reply('tmdb-search-result', formattedResults.slice(0, 10));
     } catch (apiError) {
       console.error('TMDB API error:', apiError);
-      throw new Error(`TMDB API error: ${apiError.message}`);
+      throw apiError;
     }
   } catch (error) {
     console.error('Error searching TMDB:', error);
     event.reply('tmdb-search-result', { error: error.message });
+  }
+});
+
+// Validate TMDB credentials
+ipcMain.handle('validate-tmdb-credentials', async (event, { apiKey, accessToken }) => {
+  try {
+    // Validate credentials with our tmdb-api module
+    await tmdbApi.validateCredentials(apiKey, accessToken);
+    return { valid: true };
+  } catch (error) {
+    console.error('TMDB credential validation error:', error);
+    return { 
+      valid: false, 
+      error: error.message || 'Unknown error'
+    };
   }
 }); 

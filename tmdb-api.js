@@ -1,45 +1,86 @@
 const axios = require('axios');
 
-// Note: You'll need to sign up for a free API key from The Movie Database (TMDB)
-// This is a placeholder for the API key that will be used if none is provided
-const DEFAULT_API_KEY = 'YOUR_API_KEY';
+// Base URLs for TMDB API
+const API_BASE_URL = 'https://api.themoviedb.org/3';
+const IMAGE_BASE_URL = 'https://image.tmdb.org/t/p';
 
 /**
- * Get TV series information by TMDB ID
- * @param {string} tmdbId - The TMDB ID (e.g., 1399 for Game of Thrones)
- * @param {string} [apiKey] - The API key to use
- * @param {string} [accessToken] - The access token to use
- * @returns {Promise<Object>} - Series information
+ * Make a request to the TMDB API
+ * @param {string} endpoint - API endpoint (e.g., '/tv/1399')
+ * @param {Object} params - Query parameters
+ * @param {string} [apiKey] - TMDB API key
+ * @param {string} [accessToken] - TMDB access token
+ * @returns {Promise<Object>} - API response
  */
-async function getSeriesInfo(tmdbId, apiKey = DEFAULT_API_KEY, accessToken = '') {
+async function makeRequest(endpoint, params = {}, apiKey = '', accessToken = '') {
   try {
-    // Headers for the request, including the access token if provided
+    // Set up headers with authorization if access token is provided
     const headers = {};
     if (accessToken) {
       headers['Authorization'] = `Bearer ${accessToken}`;
     }
     
-    // Using TMDB API
-    const response = await axios.get(`https://api.themoviedb.org/3/tv/${tmdbId}`, {
-      params: {
-        api_key: apiKey
-      },
-      headers
-    });
+    // Combine endpoint with base URL
+    const url = `${API_BASE_URL}${endpoint}`;
     
-    return {
-      tmdbId: response.data.id,
-      imdbId: `tt${response.data.id}`, // Convert to IMDB-like format for compatibility
-      title: response.data.name,
-      year: response.data.first_air_date ? response.data.first_air_date.substring(0, 4) : '',
-      totalSeasons: response.data.number_of_seasons,
-      plot: response.data.overview,
-      poster: response.data.poster_path ? `https://image.tmdb.org/t/p/w500${response.data.poster_path}` : null
-    };
+    // Add API key to params if provided
+    if (apiKey) {
+      params.api_key = apiKey;
+    }
+    
+    // Make the request
+    const response = await axios.get(url, { params, headers });
+    return response.data;
   } catch (error) {
-    console.error('Error fetching series info:', error);
-    throw error;
+    console.error(`TMDB API error for ${endpoint}:`, error);
+    
+    // Format error message based on response
+    if (error.response) {
+      const status = error.response.status;
+      const message = error.response.data.status_message || error.message;
+      
+      throw new Error(`TMDB API error (${status}): ${message}`);
+    } else if (error.request) {
+      throw new Error('No response received from TMDB API. Please check your internet connection.');
+    } else {
+      throw new Error(`TMDB API request error: ${error.message}`);
+    }
   }
+}
+
+/**
+ * Get TV series information by TMDB ID
+ * @param {string} tmdbId - The TMDB ID
+ * @param {string} [apiKey] - The API key to use
+ * @param {string} [accessToken] - The access token to use
+ * @returns {Promise<Object>} - Series information
+ */
+async function getSeriesInfo(tmdbId, apiKey = '', accessToken = '') {
+  // API endpoint documentation: https://developer.themoviedb.org/reference/tv-series-details
+  const data = await makeRequest(`/tv/${tmdbId}`, {
+    language: 'en-US',
+    append_to_response: 'external_ids'
+  }, apiKey, accessToken);
+  
+  return {
+    tmdbId: data.id,
+    imdbId: data.external_ids?.imdb_id || null,
+    title: data.name,
+    originalTitle: data.original_name,
+    year: data.first_air_date ? data.first_air_date.substring(0, 4) : '',
+    totalSeasons: data.number_of_seasons,
+    totalEpisodes: data.number_of_episodes,
+    status: data.status,
+    plot: data.overview,
+    genres: data.genres.map(genre => genre.name),
+    networks: data.networks.map(network => network.name),
+    popularity: data.popularity,
+    voteAverage: data.vote_average,
+    posterPath: data.poster_path,
+    backdropPath: data.backdrop_path,
+    poster: data.poster_path ? `${IMAGE_BASE_URL}/w500${data.poster_path}` : null,
+    backdrop: data.backdrop_path ? `${IMAGE_BASE_URL}/original${data.backdrop_path}` : null
+  };
 }
 
 /**
@@ -50,78 +91,33 @@ async function getSeriesInfo(tmdbId, apiKey = DEFAULT_API_KEY, accessToken = '')
  * @param {string} [accessToken] - The access token to use
  * @returns {Promise<Array>} - Array of episodes for the season
  */
-async function getSeasonInfo(tmdbId, seasonNumber, apiKey = DEFAULT_API_KEY, accessToken = '') {
-  try {
-    // Headers for the request, including the access token if provided
-    const headers = {};
-    if (accessToken) {
-      headers['Authorization'] = `Bearer ${accessToken}`;
-    }
-    
-    // Using TMDB API
-    const response = await axios.get(`https://api.themoviedb.org/3/tv/${tmdbId}/season/${seasonNumber}`, {
-      params: {
-        api_key: apiKey
-      },
-      headers
-    });
-    
-    // Map the episodes to a more usable format
-    return response.data.episodes.map(episode => ({
-      imdbId: `tt${tmdbId}e${seasonNumber}${episode.episode_number.toString().padStart(2, '0')}`, // Generate a compatible ID
-      title: episode.name,
-      released: episode.air_date,
+async function getSeasonInfo(tmdbId, seasonNumber, apiKey = '', accessToken = '') {
+  // API endpoint documentation: https://developer.themoviedb.org/reference/tv-season-details
+  const data = await makeRequest(`/tv/${tmdbId}/season/${seasonNumber}`, {
+    language: 'en-US'
+  }, apiKey, accessToken);
+  
+  return {
+    seasonId: data.id,
+    name: data.name,
+    overview: data.overview,
+    seasonNumber: data.season_number,
+    airDate: data.air_date,
+    posterPath: data.poster_path,
+    poster: data.poster_path ? `${IMAGE_BASE_URL}/w500${data.poster_path}` : null,
+    episodes: data.episodes.map(episode => ({
+      episodeId: episode.id,
+      name: episode.name,
+      overview: episode.overview || '',
+      airDate: episode.air_date,
       episodeNumber: episode.episode_number,
-      seasonNumber: seasonNumber,
-      rating: episode.vote_average,
-      plot: episode.overview
-    }));
-  } catch (error) {
-    console.error(`Error fetching season ${seasonNumber} info:`, error);
-    throw error;
-  }
-}
-
-/**
- * Get detailed episode information
- * @param {string} tmdbId - The series TMDB ID
- * @param {number} seasonNumber - The season number
- * @param {number} episodeNumber - The episode number
- * @param {string} [apiKey] - The API key to use
- * @param {string} [accessToken] - The access token to use
- * @returns {Promise<Object>} - Detailed episode information
- */
-async function getEpisodeInfo(tmdbId, seasonNumber, episodeNumber, apiKey = DEFAULT_API_KEY, accessToken = '') {
-  try {
-    // Headers for the request, including the access token if provided
-    const headers = {};
-    if (accessToken) {
-      headers['Authorization'] = `Bearer ${accessToken}`;
-    }
-    
-    // Using TMDB API
-    const response = await axios.get(`https://api.themoviedb.org/3/tv/${tmdbId}/season/${seasonNumber}/episode/${episodeNumber}`, {
-      params: {
-        api_key: apiKey
-      },
-      headers
-    });
-    
-    return {
-      imdbId: `tt${tmdbId}e${seasonNumber}${episodeNumber.toString().padStart(2, '0')}`, // Generate a compatible ID
-      title: response.data.name,
-      released: response.data.air_date,
-      seasonNumber: seasonNumber,
-      episodeNumber: episodeNumber,
-      plot: response.data.overview,
-      rating: response.data.vote_average,
-      director: response.data.crew.find(c => c.job === 'Director')?.name || '',
-      writer: response.data.crew.find(c => c.job === 'Writer')?.name || ''
-    };
-  } catch (error) {
-    console.error('Error fetching episode info:', error);
-    throw error;
-  }
+      seasonNumber: episode.season_number,
+      stillPath: episode.still_path,
+      still: episode.still_path ? `${IMAGE_BASE_URL}/w300${episode.still_path}` : null,
+      voteAverage: episode.vote_average,
+      runtime: episode.runtime
+    }))
+  };
 }
 
 /**
@@ -131,22 +127,39 @@ async function getEpisodeInfo(tmdbId, seasonNumber, episodeNumber, apiKey = DEFA
  * @param {string} [accessToken] - The access token to use
  * @returns {Promise<Array>} - Array of all episodes with details
  */
-async function getAllEpisodes(tmdbId, apiKey = DEFAULT_API_KEY, accessToken = '') {
+async function getAllEpisodes(tmdbId, apiKey = '', accessToken = '') {
   try {
     // First get series info to know how many seasons
     const seriesInfo = await getSeriesInfo(tmdbId, apiKey, accessToken);
     const totalSeasons = seriesInfo.totalSeasons;
     
     // Get episodes for each season
-    const episodePromises = [];
+    const seasonPromises = [];
     for (let i = 1; i <= totalSeasons; i++) {
-      episodePromises.push(getSeasonInfo(tmdbId, i, apiKey, accessToken));
+      seasonPromises.push(getSeasonInfo(tmdbId, i, apiKey, accessToken));
     }
     
-    const seasonsData = await Promise.all(episodePromises);
+    const seasonsData = await Promise.all(seasonPromises);
     
     // Flatten the array of season episodes
-    return seasonsData.flat();
+    const allEpisodes = [];
+    seasonsData.forEach(season => {
+      season.episodes.forEach(episode => {
+        allEpisodes.push({
+          id: episode.episodeId,
+          title: episode.name,
+          plot: episode.overview,
+          seasonNumber: episode.seasonNumber,
+          episodeNumber: episode.episodeNumber,
+          airDate: episode.airDate,
+          still: episode.still,
+          voteAverage: episode.voteAverage,
+          runtime: episode.runtime
+        });
+      });
+    });
+    
+    return allEpisodes;
   } catch (error) {
     console.error('Error fetching all episodes:', error);
     throw error;
@@ -160,36 +173,47 @@ async function getAllEpisodes(tmdbId, apiKey = DEFAULT_API_KEY, accessToken = ''
  * @param {string} [accessToken] - The access token to use
  * @returns {Promise<Array>} - Array of search results
  */
-async function searchSeries(title, apiKey = DEFAULT_API_KEY, accessToken = '') {
+async function searchSeries(title, apiKey = '', accessToken = '') {
+  // API endpoint documentation: https://developer.themoviedb.org/reference/search-tv
+  const data = await makeRequest('/search/tv', {
+    query: title,
+    include_adult: false,
+    language: 'en-US',
+    page: 1
+  }, apiKey, accessToken);
+  
+  if (!data.results || data.results.length === 0) {
+    return []; 
+  }
+  
+  return data.results.map(result => ({
+    id: result.id,
+    title: result.name,
+    originalTitle: result.original_name,
+    year: result.first_air_date ? result.first_air_date.substring(0, 4) : null,
+    overview: result.overview,
+    posterPath: result.poster_path,
+    backdropPath: result.backdrop_path,
+    poster: result.poster_path ? `${IMAGE_BASE_URL}/w500${result.poster_path}` : null,
+    backdrop: result.backdrop_path ? `${IMAGE_BASE_URL}/w1280${result.backdrop_path}` : null,
+    popularity: result.popularity,
+    voteAverage: result.vote_average
+  }));
+}
+
+/**
+ * Validate TMDB API credentials (API key or access token)
+ * @param {string} [apiKey] - The API key to validate
+ * @param {string} [accessToken] - The access token to validate
+ * @returns {Promise<boolean>} - True if valid, throws error if invalid
+ */
+async function validateCredentials(apiKey = '', accessToken = '') {
+  // We'll use the configuration endpoint as it's lightweight and always accessible
+  // API endpoint documentation: https://developer.themoviedb.org/reference/configuration-details
   try {
-    // Headers for the request, including the access token if provided
-    const headers = {};
-    if (accessToken) {
-      headers['Authorization'] = `Bearer ${accessToken}`;
-    }
-    
-    // Using TMDB API
-    const response = await axios.get(`https://api.themoviedb.org/3/search/tv`, {
-      params: {
-        api_key: apiKey,
-        query: title
-      },
-      headers
-    });
-    
-    if (!response.data.results || response.data.results.length === 0) {
-      return []; // No results found
-    }
-    
-    return response.data.results.map(result => ({
-      id: `tt${result.id}`, // Convert TMDB id to IMDB-like format for compatibility
-      tmdbId: result.id,
-      title: result.name,
-      year: result.first_air_date ? result.first_air_date.substring(0, 4) : null,
-      poster: result.poster_path ? `https://image.tmdb.org/t/p/w500${result.poster_path}` : null
-    }));
+    await makeRequest('/configuration', {}, apiKey, accessToken);
+    return true;
   } catch (error) {
-    console.error('Error searching series:', error);
     throw error;
   }
 }
@@ -197,7 +221,8 @@ async function searchSeries(title, apiKey = DEFAULT_API_KEY, accessToken = '') {
 module.exports = {
   getSeriesInfo,
   getSeasonInfo,
-  getEpisodeInfo,
   getAllEpisodes,
-  searchSeries
+  searchSeries,
+  validateCredentials,
+  IMAGE_BASE_URL
 }; 

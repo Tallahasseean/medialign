@@ -1,6 +1,6 @@
 # MediaAlign
 
-MediaAlign is a cross-platform desktop application designed to help Plex users fix incorrectly named TV series episodes. It uses audio extraction and analysis to match episodes with their correct metadata from IMDB.
+MediaAlign is a cross-platform desktop application designed to help Plex users fix incorrectly named TV series episodes. It uses audio extraction and analysis to match episodes with their correct metadata from TMDB.
 
 ## Features
 

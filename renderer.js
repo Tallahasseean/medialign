@@ -4,7 +4,7 @@ const browseButton = document.getElementById('browse-button');
 const imdbIdInput = document.getElementById('imdb-id');
 const analyzeButton = document.getElementById('analyze-button');
 const progressContainer = document.getElementById('progress-container');
-const progressBarFill = document.getElementById('progress-bar-fill');
+const progressBar = document.getElementById('progress-bar');
 const progressStatus = document.getElementById('progress-status');
 const resultsTable = document.getElementById('results-table');
 const resultsBody = document.getElementById('results-body');
@@ -48,7 +48,7 @@ analyzeButton.addEventListener('click', async () => {
   // Show progress UI
   progressContainer.style.display = 'block';
   resultsTable.style.display = 'none';
-  progressBarFill.style.width = '0%';
+  progressBar.value = 0;
   progressStatus.textContent = 'Initializing...';
   
   try {
@@ -65,8 +65,9 @@ analyzeButton.addEventListener('click', async () => {
   } catch (error) {
     console.error('Error analyzing series:', error);
     progressStatus.textContent = `Error: ${error.message}`;
-    progressBarFill.style.width = '100%';
-    progressBarFill.style.backgroundColor = '#dc3545';
+    progressBar.value = 100;
+    progressBar.classList.remove('progress-primary');
+    progressBar.classList.add('progress-error');
   }
 });
 
@@ -75,7 +76,7 @@ function simulateProgress() {
   let progress = 0;
   const interval = setInterval(() => {
     progress += 5;
-    progressBarFill.style.width = `${progress}%`;
+    progressBar.value = progress;
     
     if (progress < 20) {
       progressStatus.textContent = 'Downloading IMDB data...';
@@ -163,32 +164,27 @@ function displayResults(results) {
     
     const statusCell = document.createElement('td');
     if (result.status === 'correct') {
-      statusCell.textContent = 'Correct';
-      statusCell.className = 'success';
+      statusCell.innerHTML = '<span class="badge badge-success">Correct</span>';
     } else if (result.status === 'incorrect') {
-      statusCell.textContent = 'Misnamed';
-      statusCell.className = 'error';
+      statusCell.innerHTML = '<span class="badge badge-error">Misnamed</span>';
     } else if (result.status === 'fixed') {
-      statusCell.textContent = 'Fixed';
-      statusCell.className = 'success';
+      statusCell.innerHTML = '<span class="badge badge-success">Fixed</span>';
     } else {
-      statusCell.textContent = 'Unknown';
-      statusCell.className = 'warning';
+      statusCell.innerHTML = '<span class="badge badge-warning">Unknown</span>';
     }
     
     const actionCell = document.createElement('td');
     if (result.status === 'incorrect') {
       const fixButton = document.createElement('button');
-      fixButton.textContent = 'Fix Filename';
-      fixButton.className = 'action-button';
+      fixButton.textContent = 'Fix';
+      fixButton.className = 'btn btn-xs btn-primary';
       fixButton.addEventListener('click', () => {
         fixFile(result.id, result.episode_id);
       });
       
       const detailsSpan = document.createElement('span');
       detailsSpan.textContent = ` → ${result.corrected_filename}`;
-      detailsSpan.style.fontSize = '0.9em';
-      detailsSpan.style.color = '#666';
+      detailsSpan.className = 'text-xs text-base-content opacity-70 ml-2';
       
       actionCell.appendChild(fixButton);
       actionCell.appendChild(detailsSpan);

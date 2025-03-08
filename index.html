@@ -1,60 +1,73 @@
 <!DOCTYPE html>
-<html>
+<html data-theme="light">
 <head>
   <meta charset="UTF-8">
   <title>MediaAlign - TV Series Episode Alignment Tool</title>
+  <!-- Local styles only -->
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <div class="container">
-    <header>
-      <h1>MediaAlign</h1>
-      <p>TV Series Episode Alignment Tool</p>
+  <div class="container mx-auto px-4 py-8">
+    <header class="text-center mb-8">
+      <h1 class="text-4xl font-bold text-primary">MediaAlign</h1>
+      <p class="text-xl text-base-content opacity-70">TV Series Episode Alignment Tool</p>
     </header>
 
-    <div class="main-content">
-      <div class="setup-section">
-        <h2>Setup</h2>
-        <div class="form-group">
-          <label for="series-directory">TV Series Directory:</label>
-          <div class="input-with-button">
-            <input type="text" id="series-directory" readonly placeholder="Select a directory containing TV series">
-            <button id="browse-button">Browse</button>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+      <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+          <h2 class="card-title">Setup</h2>
+          <div class="form-control w-full">
+            <label class="label">
+              <span class="label-text">TV Series Directory:</span>
+            </label>
+            <div class="input-group">
+              <input type="text" id="series-directory" readonly placeholder="Select a directory containing TV series" class="input input-bordered w-full" />
+              <button id="browse-button" class="btn btn-square">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 00-1.883 2.542l.857 6a2.25 2.25 0 002.227 1.932H19.05a2.25 2.25 0 002.227-1.932l.857-6a2.25 2.25 0 00-1.883-2.542m-16.5 0V6A2.25 2.25 0 016 3.75h3.879a1.5 1.5 0 011.06.44l2.122 2.12a1.5 1.5 0 001.06.44H18A2.25 2.25 0 0120.25 9v.776" />
+                </svg>
+              </button>
+            </div>
+          </div>
+          
+          <div class="form-control w-full mt-4">
+            <label class="label">
+              <span class="label-text">IMDB ID:</span>
+            </label>
+            <input type="text" id="imdb-id" placeholder="e.g., tt0944947" class="input input-bordered w-full" />
+          </div>
+          
+          <div class="card-actions justify-end mt-6">
+            <button id="analyze-button" class="btn btn-primary w-full">Analyze Series</button>
           </div>
         </div>
-        
-        <div class="form-group">
-          <label for="imdb-id">IMDB ID:</label>
-          <input type="text" id="imdb-id" placeholder="e.g., tt0944947">
-        </div>
-        
-        <button id="analyze-button" class="primary-button">Analyze Series</button>
       </div>
 
-      <div class="results-section">
-        <h2>Results</h2>
-        <div id="progress-container" style="display: none;">
-          <div class="progress-bar">
-            <div id="progress-bar-fill"></div>
+      <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+          <h2 class="card-title">Results</h2>
+          <div id="progress-container" style="display: none;">
+            <progress class="progress progress-primary w-full" value="0" max="100" id="progress-bar"></progress>
+            <p id="progress-status" class="text-center mt-2 italic">Processing...</p>
           </div>
-          <p id="progress-status">Processing...</p>
-        </div>
-        
-        <div id="results-container">
-          <table id="results-table" style="display: none;">
-            <thead>
-              <tr>
-                <th>Season</th>
-                <th>Episode</th>
-                <th>Original Filename</th>
-                <th>Status</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody id="results-body">
-              <!-- Results will be populated here -->
-            </tbody>
-          </table>
+          
+          <div id="results-container" class="overflow-x-auto">
+            <table id="results-table" class="table table-zebra w-full" style="display: none;">
+              <thead>
+                <tr>
+                  <th>Season</th>
+                  <th>Episode</th>
+                  <th>Original Filename</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="results-body">
+                <!-- Results will be populated here -->
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>

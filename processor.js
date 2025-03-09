@@ -6,6 +6,14 @@ const audioProcessor = require('./audio-processor');
 const speechToText = require('./speech-to-text');
 const textMatcher = require('./text-matcher');
 const { ipcMain } = require('electron');
+const { Worker } = require('worker_threads');
+const os = require('os');
+const fs = require('fs');
+
+// Track active extraction workers
+const activeWorkers = new Map();
+// Track series being processed
+let currentlyProcessingSeries = null;
 
 // Initialize the processor
 async function initialize() {
@@ -21,6 +29,15 @@ async function initialize() {
     // Set up IPC handlers
     setupIpcHandlers();
     console.log('IPC handlers set up');
+    
+    // Set up audio progress listener
+    audioProcessor.progressEmitter.on('progress', async (progressData) => {
+      // Find the file ID from the video path
+      const fileId = activeWorkers.get(progressData.videoPath);
+      if (fileId) {
+        await db.updateAudioExtractionStatus(fileId, 'in_progress', progressData.overallProgress);
+      }
+    });
     
     return true;
   } catch (error) {
@@ -77,6 +94,113 @@ function setupIpcHandlers() {
       throw error;
     }
   });
+  
+  // Extract audio for a series
+  ipcMain.handle('extract-audio', async (event, { seriesId }) => {
+    try {
+      // Check if already processing this series
+      if (currentlyProcessingSeries === seriesId) {
+        return { status: 'already_processing' };
+      }
+      
+      // Start audio extraction in the background
+      extractAudioForSeries(seriesId);
+      
+      return { status: 'started' };
+    } catch (error) {
+      console.error('Error starting audio extraction:', error);
+      throw error;
+    }
+  });
+  
+  // Reset file extraction status
+  ipcMain.handle('reset-file-extraction', async (event, { fileId }) => {
+    try {
+      console.log(`Resetting extraction status for file ID ${fileId}`);
+      
+      // Reset the file's extraction status
+      await db.updateAudioExtractionStatus(fileId, 'pending', 0);
+      await db.updateFileProcessingStep(fileId, 'pending');
+      
+      // Get the file to remove it from active workers if needed
+      const file = await db.getFile(fileId);
+      if (file && activeWorkers.has(file.original_path)) {
+        activeWorkers.delete(file.original_path);
+      }
+      
+      return { success: true };
+    } catch (error) {
+      console.error(`Error resetting file extraction status for file ID ${fileId}:`, error);
+      throw error;
+    }
+  });
+  
+  // Get audio extraction status
+  ipcMain.handle('get-audio-extraction-status', async (event, { seriesId }) => {
+    try {
+      const files = await db.getFiles(seriesId);
+      
+      // Calculate overall progress
+      const totalFiles = files.length;
+      const completedFiles = files.filter(f => f.audio_extraction_status === 'completed').length;
+      const inProgressFiles = files.filter(f => f.audio_extraction_status === 'in_progress').length;
+      const pendingFiles = files.filter(f => f.audio_extraction_status === 'pending').length;
+      const errorFiles = files.filter(f => f.audio_extraction_status === 'error').length;
+      
+      // Calculate overall progress percentage
+      let overallProgress = 0;
+      if (totalFiles > 0) {
+        // Count completed files as 100%, in-progress files by their progress percentage
+        const progressSum = completedFiles * 100 + 
+          files.filter(f => f.audio_extraction_status === 'in_progress')
+            .reduce((sum, file) => sum + (file.audio_extraction_progress || 0), 0);
+        
+        overallProgress = Math.round(progressSum / totalFiles);
+      }
+      
+      return {
+        totalFiles,
+        completedFiles,
+        inProgressFiles,
+        pendingFiles,
+        errorFiles,
+        overallProgress,
+        isProcessing: currentlyProcessingSeries === seriesId,
+        files: files.map(f => ({
+          id: f.id,
+          filename: f.original_filename,
+          status: f.audio_extraction_status,
+          progress: f.audio_extraction_progress,
+          processingStep: f.processing_step
+        }))
+      };
+    } catch (error) {
+      console.error('Error getting audio extraction status:', error);
+      throw error;
+    }
+  });
+  
+  // Update settings
+  ipcMain.handle('update-setting', async (event, { key, value }) => {
+    try {
+      await db.updateSetting(key, value);
+      return { success: true };
+    } catch (error) {
+      console.error(`Error updating setting ${key}:`, error);
+      throw error;
+    }
+  });
+  
+  // Get settings
+  ipcMain.handle('get-setting', async (event, { key }) => {
+    try {
+      const value = await db.getSetting(key);
+      return { key, value };
+    } catch (error) {
+      console.error(`Error getting setting ${key}:`, error);
+      throw error;
+    }
+  });
 }
 
 /**
@@ -130,11 +254,157 @@ async function processSeries(directory, tmdbId, apiKey, accessToken) {
       await processFile(file, dbEpisodes);
     }
     
-    // Step 8: Return processing summary
-    return await db.getProcessingSummary(seriesId);
+    // Step 8: Automatically start audio extraction
+    // Start in the background so we don't block the response
+    setTimeout(() => {
+      extractAudioForSeries(seriesId)
+        .catch(error => console.error(`Background audio extraction error: ${error.message}`));
+    }, 100);
+    
+    // Step 9: Return processing summary and files with extraction status
+    const summary = await db.getProcessingSummary(seriesId);
+    const updatedFiles = await db.getFiles(seriesId);
+    
+    return {
+      ...summary,
+      files: updatedFiles
+    };
   } catch (error) {
     console.error('Error processing series:', error);
     throw error;
+  }
+}
+
+/**
+ * Extract audio for all files in a series
+ * @param {number} seriesId - Series ID
+ * @returns {Promise<void>}
+ */
+async function extractAudioForSeries(seriesId) {
+  try {
+    // Set the current processing series
+    currentlyProcessingSeries = seriesId;
+    
+    // Get max concurrent processes from settings
+    let maxProcesses = await db.getSetting('max_extraction_processes');
+    maxProcesses = maxProcesses ? parseInt(maxProcesses) : Math.max(1, Math.floor(os.cpus().length / 2));
+    
+    console.log(`Starting audio extraction for series ${seriesId} with ${maxProcesses} concurrent processes`);
+    
+    // Get all files for the series
+    const files = await db.getFiles(seriesId);
+    
+    // Process files in batches
+    const pendingFiles = files.filter(f => 
+      f.audio_extraction_status === 'pending' || 
+      f.audio_extraction_status === 'in_progress'
+    );
+    
+    console.log(`Found ${pendingFiles.length} files pending audio extraction`);
+    
+    // Process files in batches of maxProcesses
+    for (let i = 0; i < pendingFiles.length; i += maxProcesses) {
+      const batch = pendingFiles.slice(i, i + maxProcesses);
+      
+      // Process batch concurrently
+      await Promise.all(batch.map(file => extractAudioForFile(file)));
+      
+      console.log(`Completed batch ${Math.floor(i / maxProcesses) + 1} of ${Math.ceil(pendingFiles.length / maxProcesses)}`);
+    }
+    
+    console.log(`Audio extraction completed for series ${seriesId}`);
+    currentlyProcessingSeries = null;
+  } catch (error) {
+    console.error(`Error extracting audio for series ${seriesId}:`, error);
+    currentlyProcessingSeries = null;
+    throw error;
+  }
+}
+
+/**
+ * Extract audio for a single file
+ * @param {Object} file - File object from database
+ * @returns {Promise<void>}
+ */
+async function extractAudioForFile(file) {
+  try {
+    console.log(`Extracting audio for file: ${file.original_filename}`);
+    
+    // Skip if already completed
+    if (file.audio_extraction_status === 'completed') {
+      console.log(`Audio already extracted for file: ${file.original_filename}`);
+      return;
+    }
+    
+    // Update status to in_progress
+    await db.updateAudioExtractionStatus(file.id, 'in_progress', 0);
+    await db.updateFileProcessingStep(file.id, 'extracting_audio');
+    
+    // Track this file in active workers
+    activeWorkers.set(file.original_path, file.id);
+    
+    // Check if file exists
+    if (!fs.existsSync(file.original_path)) {
+      console.error(`File not found: ${file.original_path}`);
+      await db.updateAudioExtractionStatus(file.id, 'error', 0);
+      await db.updateFileProcessingStep(file.id, 'error');
+      activeWorkers.delete(file.original_path);
+      return;
+    }
+    
+    // Create a progress callback that updates the database
+    const progressCallback = async (progress) => {
+      console.log(`File ${file.original_filename} extraction progress: ${progress}%`);
+      await db.updateAudioExtractionStatus(file.id, 'in_progress', progress);
+    };
+    
+    // Extract audio segments
+    const segments = await audioProcessor.extractAudioSegments(
+      file.original_path, 
+      [], // Use default segments
+      progressCallback
+    );
+    
+    // If no segments were extracted, mark as error
+    if (!segments || segments.length === 0) {
+      console.error(`No audio segments extracted for file: ${file.original_filename}`);
+      await db.updateAudioExtractionStatus(file.id, 'error', 0);
+      await db.updateFileProcessingStep(file.id, 'error');
+      activeWorkers.delete(file.original_path);
+      return;
+    }
+    
+    // Save audio segments to database
+    for (const segment of segments) {
+      await db.saveAudioSegment(
+        file.id,
+        segment.segmentNumber,
+        segment.start,
+        segment.duration,
+        segment.buffer
+      );
+    }
+    
+    // Update status to completed
+    await db.updateAudioExtractionStatus(file.id, 'completed', 100);
+    await db.updateFileProcessingStep(file.id, 'audio_extracted');
+    
+    // Clean up temporary files
+    await audioProcessor.cleanupAudioFiles(segments.map(s => s.path));
+    
+    // Remove from active workers
+    activeWorkers.delete(file.original_path);
+    
+    console.log(`Audio extraction completed for file: ${file.original_filename}`);
+  } catch (error) {
+    console.error(`Error extracting audio for file ${file.original_filename}:`, error);
+    
+    // Update status to error
+    await db.updateAudioExtractionStatus(file.id, 'error', 0);
+    await db.updateFileProcessingStep(file.id, 'error');
+    
+    // Remove from active workers
+    activeWorkers.delete(file.original_path);
   }
 }
 
@@ -148,86 +418,45 @@ async function processFile(file, episodes) {
   try {
     console.log(`Processing file: ${file.original_filename}`);
     
-    // Step 1: Extract episode info from filename
-    const extractedInfo = fileScanner.extractEpisodeInfo(file.original_path);
+    // Update processing step
+    await db.updateFileProcessingStep(file.id, 'analyzing_filename');
     
-    // Step 2: If we can extract info, check if it matches an episode
-    if (extractedInfo) {
-      const matchingEpisode = episodes.find(
-        episode => episode.season_number === extractedInfo.season && 
-                  episode.episode_number === extractedInfo.episode
-      );
-      
-      if (matchingEpisode) {
-        // Filename matches an episode, mark as correct
-        await db.updateFileStatus(
-          file.id,
-          matchingEpisode.id,
-          'correct',
-          null,
-          1.0,
-          1
-        );
-        console.log(`File ${file.original_filename} is correctly named`);
-        return;
-      }
-    }
+    // Extract season and episode from filename
+    const extractedInfo = fileScanner.extractEpisodeInfo(file.original_filename);
     
-    // Step 3: If we can't extract info or it doesn't match, analyze audio
-    const audioSegments = await audioProcessor.extractAudioSegments(file.original_path);
-    console.log(`Extracted ${audioSegments.length} audio segments from ${file.original_filename}`);
+    // Find matching episode by season and episode number
+    const matchingEpisode = extractedInfo ? 
+      episodes.find(e => 
+        e.season_number === extractedInfo.season && 
+        e.episode_number === extractedInfo.episode
+      ) : null;
     
-    // Step 4: Transcribe audio
-    const transcriptions = await speechToText.transcribeMultipleAudio(audioSegments);
-    console.log(`Transcribed ${transcriptions.length} audio segments from ${file.original_filename}`);
-    
-    // Step 5: Match transcriptions with episodes
-    const { episode: matchedEpisode, score } = textMatcher.matchTranscriptionsWithEpisodes(
-      transcriptions,
-      episodes
-    );
-    
-    // Step 6: Update file status based on match
-    if (matchedEpisode && score > 0.3) { // Threshold can be adjusted
-      const status = extractedInfo && 
-                    extractedInfo.season === matchedEpisode.season_number && 
-                    extractedInfo.episode === matchedEpisode.episode_number
-                    ? 'correct' : 'incorrect';
-      
-      const newFilename = status === 'incorrect' 
-        ? fileScanner.generateFilename(file.original_path, {
-            season: matchedEpisode.season_number,
-            episode: matchedEpisode.episode_number,
-            title: matchedEpisode.title
-          })
-        : null;
-      
+    if (matchingEpisode) {
+      // Filename matches an episode, mark as correct
       await db.updateFileStatus(
         file.id,
-        matchedEpisode.id,
-        status,
-        newFilename,
-        score,
-        status === 'correct' ? 1 : 0
+        matchingEpisode.id,
+        'correct',
+        null,
+        1.0,
+        1
       );
-      
-      console.log(`File ${file.original_filename} matched with ${matchedEpisode.title} (${status})`);
+      console.log(`File ${file.original_filename} is correctly named`);
     } else {
-      // No good match found
+      // Filename doesn't match, will need audio analysis
       await db.updateFileStatus(
         file.id,
         null,
-        'unknown',
+        'pending',
         null,
-        score,
+        0,
         0
       );
-      
-      console.log(`No good match found for ${file.original_filename}`);
+      console.log(`File ${file.original_filename} needs audio analysis`);
     }
     
-    // Clean up audio files
-    await audioProcessor.cleanupAudioFiles(audioSegments);
+    // Update processing step
+    await db.updateFileProcessingStep(file.id, 'filename_analyzed');
   } catch (error) {
     console.error(`Error processing file ${file.original_filename}:`, error);
     
@@ -240,23 +469,23 @@ async function processFile(file, episodes) {
       0,
       0 // isCorrect = false
     );
+    
+    // Update processing step
+    await db.updateFileProcessingStep(file.id, 'error');
   }
 }
 
 /**
  * Fix a misnamed file
- * @param {number} fileId - ID of the file to fix
- * @param {number} episodeId - ID of the correct episode
- * @returns {Promise<Object>} - Updated file object
+ * @param {number} fileId - File ID
+ * @param {number} episodeId - Episode ID
+ * @returns {Promise<Object>} - Result of the fix operation
  */
 async function fixFile(fileId, episodeId) {
   try {
-    // Get file and episode info
-    const files = await db.getFiles(null);
-    const file = files.find(f => f.id === fileId);
-    
-    const episodes = await db.getEpisodes(null);
-    const episode = episodes.find(e => e.id === episodeId);
+    // Get file and episode details
+    const file = await db.getFile(fileId);
+    const episode = await db.getEpisode(episodeId);
     
     if (!file || !episode) {
       throw new Error('File or episode not found');
@@ -282,20 +511,33 @@ async function fixFile(fileId, episodeId) {
       1 // isCorrect = true
     );
     
-    // Return updated file
-    const updatedFiles = await db.getFiles(null);
-    return updatedFiles.find(f => f.id === fileId);
+    return {
+      success: true,
+      oldPath: file.original_path,
+      newPath,
+      oldFilename: file.original_filename,
+      newFilename
+    };
   } catch (error) {
-    console.error('Error fixing file:', error);
+    console.error(`Error fixing file ${fileId}:`, error);
     throw error;
   }
 }
 
-// Clean up resources
+/**
+ * Clean up resources
+ * @returns {Promise<void>}
+ */
 async function cleanup() {
   try {
+    // Close the database connection
     await db.closeDatabase();
     console.log('Database closed');
+    
+    // Clean up any temporary files
+    await audioProcessor.cleanupTempFiles();
+    console.log('Temporary files cleaned up');
+    
     return true;
   } catch (error) {
     console.error('Error cleaning up processor:', error);
@@ -303,9 +545,148 @@ async function cleanup() {
   }
 }
 
+// Get analysis results for a series
+async function getSeriesAnalysis(seriesId) {
+  try {
+    console.log(`Getting analysis results for series ID: ${seriesId}`);
+    
+    // Get the series from the database
+    const series = await db.getSeries(seriesId);
+    if (!series) {
+      console.warn(`Series with ID ${seriesId} not found, trying to find by directory`);
+      
+      // Try to get all series and find one with a matching directory
+      const allSeries = await db.getAllSeries();
+      console.log(`Found ${allSeries.length} series in the database`);
+      
+      // If we have no series, return an empty result
+      if (allSeries.length === 0) {
+        return { series: null, files: [] };
+      }
+      
+      // Use the first series as a fallback
+      const fallbackSeries = allSeries[0];
+      console.log(`Using fallback series with ID ${fallbackSeries.id}`);
+      
+      // Get all files for the fallback series
+      const files = await db.getFilesForSeries(fallbackSeries.directory);
+      
+      // Return the results
+      return {
+        series: fallbackSeries,
+        files
+      };
+    }
+    
+    // Get all files for the series
+    const files = await db.getFilesForSeries(series.directory);
+    
+    // Return the results
+    return {
+      series,
+      files
+    };
+  } catch (error) {
+    console.error('Error getting series analysis:', error);
+    throw error;
+  }
+}
+
+// Get all series from the database
+async function getAllSeries() {
+  try {
+    console.log('Getting all series from the database');
+    
+    // Get all series from the database
+    const series = await db.getAllSeries();
+    
+    return series;
+  } catch (error) {
+    console.error('Error getting all series:', error);
+    throw error;
+  }
+}
+
+// Reset a file's extraction status
+async function resetFileExtractionStatus(fileId) {
+  try {
+    console.log(`Resetting extraction status for file ID: ${fileId}`);
+    
+    // Reset the file's extraction status in the database
+    await db.updateAudioExtractionStatus(fileId, null, 0);
+    
+    return true;
+  } catch (error) {
+    console.error('Error resetting file extraction status:', error);
+    throw error;
+  }
+}
+
+// Clean up duplicate series in the database
+async function cleanupDuplicateSeries() {
+  try {
+    console.log('Cleaning up duplicate series in the database');
+    
+    // Get all series from the database
+    const allSeries = await db.getAllSeries();
+    console.log(`Found ${allSeries.length} total series in the database`);
+    
+    // Group series by directory
+    const seriesByDirectory = {};
+    allSeries.forEach(series => {
+      if (!seriesByDirectory[series.directory]) {
+        seriesByDirectory[series.directory] = [];
+      }
+      seriesByDirectory[series.directory].push(series);
+    });
+    
+    // Find directories with multiple series
+    const duplicateDirectories = Object.keys(seriesByDirectory).filter(dir => 
+      seriesByDirectory[dir].length > 1
+    );
+    
+    console.log(`Found ${duplicateDirectories.length} directories with duplicate series`);
+    
+    // For each directory with duplicates, keep only the most recent one
+    let removedCount = 0;
+    for (const dir of duplicateDirectories) {
+      const seriesInDir = seriesByDirectory[dir];
+      
+      // Sort by ID (assuming higher ID means more recent)
+      seriesInDir.sort((a, b) => b.id - a.id);
+      
+      // Keep the first one (highest ID), remove the rest
+      const seriesToKeep = seriesInDir[0];
+      const seriesToRemove = seriesInDir.slice(1);
+      
+      console.log(`For directory ${dir}, keeping series ID ${seriesToKeep.id} and removing ${seriesToRemove.length} duplicates`);
+      
+      // Remove the duplicates
+      for (const series of seriesToRemove) {
+        await db.removeSeries(series.id);
+        removedCount++;
+      }
+    }
+    
+    return {
+      removed: removedCount,
+      success: true
+    };
+  } catch (error) {
+    console.error('Error cleaning up duplicate series:', error);
+    throw error;
+  }
+}
+
 module.exports = {
   initialize,
   processSeries,
+  processFile,
   fixFile,
-  cleanup
+  extractAudioForSeries,
+  cleanup,
+  getSeriesAnalysis,
+  getAllSeries,
+  resetFileExtractionStatus,
+  cleanupDuplicateSeries
 }; 

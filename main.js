@@ -179,4 +179,87 @@ ipcMain.handle('validate-tmdb-credentials', async (event, { apiKey, accessToken 
       error: error.message || 'Unknown error'
     };
   }
+});
+
+// Get files in a directory
+ipcMain.handle('get-directory-files', async (event, { directory }) => {
+  try {
+    console.log(`Getting files in directory: ${directory}`);
+    
+    // Check if directory exists
+    if (!fs.existsSync(directory)) {
+      throw new Error(`Directory does not exist: ${directory}`);
+    }
+    
+    // Read the directory
+    const items = await fs.promises.readdir(directory, { withFileTypes: true });
+    
+    // Process each item
+    const files = items.map(item => {
+      const itemPath = path.join(directory, item.name);
+      const stats = fs.statSync(itemPath);
+      
+      return {
+        name: item.name,
+        path: itemPath,
+        isDirectory: item.isDirectory(),
+        size: stats.size,
+        modified: stats.mtime
+      };
+    });
+    
+    console.log(`Found ${files.length} items in directory: ${directory}`);
+    return files;
+  } catch (error) {
+    console.error('Error getting directory files:', error);
+    throw error;
+  }
+});
+
+// Get analysis results for a series
+ipcMain.handle('get-series-analysis', async (event, { seriesId }) => {
+  try {
+    console.log(`Getting analysis results for series ID: ${seriesId}`);
+    
+    // Get the analysis results from the processor
+    const results = await processor.getSeriesAnalysis(seriesId);
+    
+    console.log(`Retrieved analysis results for series ID: ${seriesId}`);
+    return results;
+  } catch (error) {
+    console.error('Error getting series analysis:', error);
+    throw error;
+  }
+});
+
+// Get all series from the database
+ipcMain.handle('get-all-series', async (event) => {
+  try {
+    console.log('Getting all series from the database');
+    
+    // Get all series from the database
+    const series = await processor.getAllSeries();
+    
+    console.log(`Retrieved ${series.length} series from the database`);
+    return series;
+  } catch (error) {
+    console.error('Error getting all series:', error);
+    throw error;
+  }
+});
+
+// Clean up duplicate series in the database
+ipcMain.handle('cleanup-duplicate-series', async (event) => {
+  try {
+    console.log('Cleaning up duplicate series in the database');
+    
+    // Clean up duplicate series
+    const result = await processor.cleanupDuplicateSeries();
+    
+    console.log(`Cleaned up duplicate series: ${result.removed} series removed`);
+    return result;
+  } catch (error) {
+    console.error('Error cleaning up duplicate series:', error);
+    throw error;
+  }
 }); 

@@ -112,6 +112,53 @@
     .rotate-90 {
       transform: rotate(90deg);
     }
+    
+    /* Audio extraction progress styles */
+    .extraction-badge {
+      position: relative;
+      min-width: 80px;
+    }
+    
+    .mini-progress {
+      display: inline-block;
+      vertical-align: middle;
+      margin-left: 4px;
+    }
+    
+    /* Processing step colors */
+    .text-error {
+      color: #f87272;
+    }
+    
+    .text-success {
+      color: #36d399;
+    }
+    
+    .text-info {
+      color: #3abff8;
+    }
+    
+    /* Progress animation */
+    @keyframes pulse {
+      0% { opacity: 0.6; }
+      50% { opacity: 1; }
+      100% { opacity: 0.6; }
+    }
+    
+    .badge-info {
+      animation: pulse 2s infinite;
+    }
+    
+    /* Pulse animation for rows being processed */
+    @keyframes rowPulse {
+      0% { opacity: 0.7; }
+      50% { opacity: 1; }
+      100% { opacity: 0.7; }
+    }
+    
+    .pulse-animation {
+      animation: rowPulse 2s infinite;
+    }
   </style>
 </head>
 <body>
@@ -231,18 +278,12 @@
         <div class="card-body">
           <h2 class="card-title">Results</h2>
           
-          <!-- Analysis Steps Stepper -->
-          <div id="analysis-stepper" class="mb-6" style="display: none;">
-            <ul class="steps steps-vertical lg:steps-horizontal w-full">
-              <li id="step-tmdb" class="step">Fetch TMDB Data</li>
-              <li id="step-scan" class="step">Scan Media Files</li>
-              <li id="step-extract" class="step">Extract Audio</li>
-              <li id="step-analyze" class="step">Analyze Content</li>
-              <li id="step-match" class="step">Match Episodes</li>
-            </ul>
-          </div>
-          
-          <div id="progress-container" style="display: none;">
+          <!-- Simple Progress Indicator (replacing stepper) -->
+          <div id="progress-container" style="display: none;" class="mb-6">
+            <div class="flex justify-between items-center mb-2">
+              <span id="progress-label" class="font-medium">Extracting Audio</span>
+              <span id="progress-percentage" class="badge badge-primary">0%</span>
+            </div>
             <progress class="progress progress-primary w-full" value="0" max="100" id="progress-bar"></progress>
             <p id="progress-status" class="text-center mt-2 italic">Processing...</p>
           </div>
@@ -255,6 +296,7 @@
                   <th>Episode</th>
                   <th>Original Filename</th>
                   <th>Status</th>
+                  <th>Processing Step</th>
                   <th>Action</th>
                 </tr>
               </thead>

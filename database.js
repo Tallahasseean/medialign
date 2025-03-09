@@ -100,31 +100,124 @@ function initDatabase() {
 // Run database migrations
 function migrateDatabase() {
   return new Promise((resolve, reject) => {
-    // Check if is_correct column exists in files table
-    db.all("PRAGMA table_info(files)", (err, rows) => {
-      if (err) {
-        reject(err);
-        return;
-      }
+    db.serialize(() => {
+      // Check if is_correct column exists in files table
+      db.all("PRAGMA table_info(files)", (err, rows) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        
+        // Check if the column exists
+        const hasIsCorrectColumn = rows.some(row => row.name === 'is_correct');
+        
+        if (!hasIsCorrectColumn) {
+          console.log('Adding is_correct column to files table...');
+          // Add the column if it doesn't exist
+          db.run("ALTER TABLE files ADD COLUMN is_correct BOOLEAN DEFAULT 0", (err) => {
+            if (err) {
+              reject(err);
+              return;
+            }
+            console.log('Added is_correct column successfully');
+          });
+        } else {
+          console.log('is_correct column already exists in files table');
+        }
+      });
       
-      // Check if the column exists
-      const hasIsCorrectColumn = rows.some(row => row.name === 'is_correct');
+      // Check if audio_extraction_status column exists in files table
+      db.all("PRAGMA table_info(files)", (err, rows) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        
+        // Check if the columns exist
+        const hasAudioStatusColumn = rows.some(row => row.name === 'audio_extraction_status');
+        const hasAudioProgressColumn = rows.some(row => row.name === 'audio_extraction_progress');
+        const hasProcessingStepColumn = rows.some(row => row.name === 'processing_step');
+        
+        if (!hasAudioStatusColumn) {
+          console.log('Adding audio_extraction_status column to files table...');
+          db.run("ALTER TABLE files ADD COLUMN audio_extraction_status TEXT DEFAULT 'pending'", (err) => {
+            if (err) {
+              reject(err);
+              return;
+            }
+            console.log('Added audio_extraction_status column successfully');
+          });
+        }
+        
+        if (!hasAudioProgressColumn) {
+          console.log('Adding audio_extraction_progress column to files table...');
+          db.run("ALTER TABLE files ADD COLUMN audio_extraction_progress INTEGER DEFAULT 0", (err) => {
+            if (err) {
+              reject(err);
+              return;
+            }
+            console.log('Added audio_extraction_progress column successfully');
+          });
+        }
+        
+        if (!hasProcessingStepColumn) {
+          console.log('Adding processing_step column to files table...');
+          db.run("ALTER TABLE files ADD COLUMN processing_step TEXT DEFAULT 'pending'", (err) => {
+            if (err) {
+              reject(err);
+              return;
+            }
+            console.log('Added processing_step column successfully');
+          });
+        }
+      });
       
-      if (!hasIsCorrectColumn) {
-        console.log('Adding is_correct column to files table...');
-        // Add the column if it doesn't exist
-        db.run("ALTER TABLE files ADD COLUMN is_correct BOOLEAN DEFAULT 0", (err) => {
-          if (err) {
-            reject(err);
-          } else {
-            console.log('Migration completed successfully');
-            resolve();
+      // Create audio_data table if it doesn't exist
+      db.run(`CREATE TABLE IF NOT EXISTS audio_data (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        file_id INTEGER NOT NULL,
+        segment_number INTEGER NOT NULL,
+        start_time INTEGER NOT NULL,
+        duration INTEGER NOT NULL,
+        audio_data BLOB,
+        text_transcript TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (file_id) REFERENCES files (id),
+        UNIQUE(file_id, segment_number)
+      )`, (err) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        console.log('Created or verified audio_data table');
+      });
+      
+      // Create settings table if it doesn't exist
+      db.run(`CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )`, (err) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        console.log('Created or verified settings table');
+        
+        // Set default settings if they don't exist
+        db.get("SELECT value FROM settings WHERE key = 'max_extraction_processes'", (err, row) => {
+          if (err || !row) {
+            db.run("INSERT OR IGNORE INTO settings (key, value) VALUES ('max_extraction_processes', ?)", 
+              [Math.max(1, Math.floor(require('os').cpus().length / 2))], 
+              (err) => {
+                if (err) console.error('Error setting default max_extraction_processes:', err);
+                else console.log('Set default max_extraction_processes');
+              });
           }
         });
-      } else {
-        console.log('is_correct column already exists in files table');
+        
         resolve();
-      }
+      });
     });
   });
 }
@@ -238,20 +331,24 @@ function updateFileStatus(fileId, episodeId, status, correctedFilename, confiden
 
 function getFiles(seriesId) {
   return new Promise((resolve, reject) => {
-    db.all(
+    const query = seriesId ? 
       `SELECT f.*, e.season_number, e.episode_number, e.title as episode_title 
        FROM files f 
        LEFT JOIN episodes e ON f.episode_id = e.id 
-       WHERE f.series_id = ?`,
-      [seriesId],
-      (err, rows) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(rows);
-        }
+       WHERE f.series_id = ?` :
+      `SELECT f.*, e.season_number, e.episode_number, e.title as episode_title 
+       FROM files f 
+       LEFT JOIN episodes e ON f.episode_id = e.id`;
+    
+    const params = seriesId ? [seriesId] : [];
+    
+    db.all(query, params, (err, rows) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(rows);
       }
-    );
+    });
   });
 }
 
@@ -476,6 +573,251 @@ function closeDatabase() {
   });
 }
 
+// Update file processing step
+function updateFileProcessingStep(fileId, step) {
+  return new Promise((resolve, reject) => {
+    db.run(
+      'UPDATE files SET processing_step = ? WHERE id = ?',
+      [step, fileId],
+      function(err) {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(this.changes);
+        }
+      }
+    );
+  });
+}
+
+// Update audio extraction status
+function updateAudioExtractionStatus(fileId, status, progress = 0) {
+  return new Promise((resolve, reject) => {
+    db.run(
+      'UPDATE files SET audio_extraction_status = ?, audio_extraction_progress = ? WHERE id = ?',
+      [status, progress, fileId],
+      function(err) {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(this.changes);
+        }
+      }
+    );
+  });
+}
+
+// Save audio segment data
+function saveAudioSegment(fileId, segmentNumber, startTime, duration, audioData, transcript = null) {
+  return new Promise((resolve, reject) => {
+    db.run(
+      `INSERT OR REPLACE INTO audio_data 
+       (file_id, segment_number, start_time, duration, audio_data, text_transcript) 
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [fileId, segmentNumber, startTime, duration, audioData, transcript],
+      function(err) {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(this.lastID);
+        }
+      }
+    );
+  });
+}
+
+// Get audio segments for a file
+function getAudioSegments(fileId) {
+  return new Promise((resolve, reject) => {
+    db.all(
+      'SELECT * FROM audio_data WHERE file_id = ? ORDER BY segment_number',
+      [fileId],
+      (err, rows) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(rows);
+        }
+      }
+    );
+  });
+}
+
+// Get files that need audio extraction
+function getFilesForAudioExtraction(seriesId, limit = 10) {
+  return new Promise((resolve, reject) => {
+    db.all(
+      `SELECT * FROM files 
+       WHERE series_id = ? AND 
+       (audio_extraction_status = 'pending' OR audio_extraction_status = 'in_progress') 
+       ORDER BY id LIMIT ?`,
+      [seriesId, limit],
+      (err, rows) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(rows);
+        }
+      }
+    );
+  });
+}
+
+// Get setting value
+function getSetting(key) {
+  return new Promise((resolve, reject) => {
+    db.get(
+      'SELECT value FROM settings WHERE key = ?',
+      [key],
+      (err, row) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(row ? row.value : null);
+        }
+      }
+    );
+  });
+}
+
+// Update setting value
+function updateSetting(key, value) {
+  return new Promise((resolve, reject) => {
+    db.run(
+      'INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)',
+      [key, value],
+      function(err) {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(this.changes);
+        }
+      }
+    );
+  });
+}
+
+// Get a single file by ID
+function getFile(fileId) {
+  return new Promise((resolve, reject) => {
+    db.get('SELECT * FROM files WHERE id = ?', [fileId], (err, row) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(row);
+      }
+    });
+  });
+}
+
+// Get a single episode by ID
+function getEpisode(episodeId) {
+  return new Promise((resolve, reject) => {
+    db.get('SELECT * FROM episodes WHERE id = ?', [episodeId], (err, row) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(row);
+      }
+    });
+  });
+}
+
+// Get all files for a specific series directory
+function getFilesForSeries(directory) {
+  return new Promise((resolve, reject) => {
+    const query = `
+      SELECT 
+        f.id, 
+        f.original_path as file_path, 
+        f.original_filename, 
+        f.corrected_filename, 
+        f.status, 
+        f.confidence_score, 
+        f.is_correct,
+        f.episode_id,
+        e.season_number,
+        e.episode_number,
+        f.audio_extraction_status,
+        f.audio_extraction_progress,
+        f.processing_step
+      FROM 
+        files f
+      LEFT JOIN 
+        episodes e ON f.episode_id = e.id
+      WHERE 
+        f.original_path LIKE ?
+      ORDER BY 
+        e.season_number, e.episode_number
+    `;
+    
+    // Use % as wildcard to match any files in the directory or subdirectories
+    const directoryPattern = `${directory}%`;
+    
+    db.all(query, [directoryPattern], (err, rows) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(rows);
+      }
+    });
+  });
+}
+
+// Remove a series by ID
+function removeSeries(seriesId) {
+  return new Promise((resolve, reject) => {
+    db.serialize(() => {
+      // Begin transaction
+      db.run('BEGIN TRANSACTION', (err) => {
+        if (err) {
+          console.error('Error beginning transaction:', err);
+          reject(err);
+          return;
+        }
+        
+        // Delete files associated with the series
+        db.run('DELETE FROM files WHERE series_id = ?', [seriesId], (err) => {
+          if (err) {
+            console.error('Error deleting files:', err);
+            db.run('ROLLBACK', () => reject(err));
+            return;
+          }
+          
+          // Delete episodes associated with the series
+          db.run('DELETE FROM episodes WHERE series_id = ?', [seriesId], (err) => {
+            if (err) {
+              console.error('Error deleting episodes:', err);
+              db.run('ROLLBACK', () => reject(err));
+              return;
+            }
+            
+            // Delete the series
+            db.run('DELETE FROM series WHERE id = ?', [seriesId], (err) => {
+              if (err) {
+                console.error('Error deleting series:', err);
+                db.run('ROLLBACK', () => reject(err));
+                return;
+              }
+              
+              // Commit transaction
+              db.run('COMMIT', (err) => {
+                if (err) {
+                  console.error('Error committing transaction:', err);
+                  db.run('ROLLBACK', () => reject(err));
+                  return;
+                }
+                
+                resolve({ success: true, seriesId });
+              });
+            });
+          });
+        });
+      });
+    });
+  });
+}
+
 module.exports = {
   initDatabase,
   addSeries,
@@ -494,5 +836,16 @@ module.exports = {
   getCachedEpisodeInfo,
   cacheEpisodeInfo,
   clearExpiredCache,
-  closeDatabase
+  closeDatabase,
+  updateFileProcessingStep,
+  updateAudioExtractionStatus,
+  saveAudioSegment,
+  getAudioSegments,
+  getFilesForAudioExtraction,
+  getSetting,
+  updateSetting,
+  getFile,
+  getEpisode,
+  getFilesForSeries,
+  removeSeries
 }; 

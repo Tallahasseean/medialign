@@ -663,27 +663,27 @@ function renderSeriesTable() {
     
     // Create the actions cell
     const actionsCell = document.createElement('td');
-    actionsCell.className = 'text-right'; // Right-align the actions
+    actionsCell.className = 'text-right whitespace-nowrap'; // Add whitespace-nowrap to prevent wrapping
     
     // Add the analyze button
     const analyzeButton = document.createElement('button');
-    analyzeButton.className = 'btn btn-primary btn-xs analyze-btn';
+    analyzeButton.className = 'btn btn-xs btn-outline btn-primary mr-1'; // Use btn-xs and btn-outline for smaller size, add mr-1 for right margin
     analyzeButton.innerHTML = `
-      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-1">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3 h-3">
         <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z" />
       </svg>
-      Analyze
     `;
+    analyzeButton.title = "Analyze"; // Add a tooltip instead of text
     
     // Add the delete button
     const deleteButton = document.createElement('button');
-    deleteButton.className = 'btn btn-error btn-xs ml-2 delete-btn';
+    deleteButton.className = 'btn btn-xs btn-outline btn-error'; // Use btn-xs and btn-outline for smaller size
     deleteButton.innerHTML = `
-      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-1">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3 h-3">
         <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
       </svg>
-      Delete
     `;
+    deleteButton.title = "Delete"; // Add a tooltip instead of text
     
     actionsCell.appendChild(analyzeButton);
     actionsCell.appendChild(deleteButton);
@@ -2363,7 +2363,18 @@ function createDirectoryRow(dir, series, parentRow, indentLevel) {
   
   // Actions cell
   const actionsCell = document.createElement('td');
-  actionsCell.className = 'text-right';
+  actionsCell.className = 'text-right whitespace-nowrap';
+  
+  // Add analyze button
+  const analyzeBtn = document.createElement('button');
+  analyzeBtn.className = 'btn btn-xs btn-outline btn-primary';
+  analyzeBtn.title = 'Analyze';
+  analyzeBtn.innerHTML = `
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3 h-3">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z" />
+    </svg>
+  `;
+  actionsCell.appendChild(analyzeBtn);
   
   // Add cells to row
   dirRow.appendChild(titleCell);
@@ -2373,6 +2384,12 @@ function createDirectoryRow(dir, series, parentRow, indentLevel) {
   // Add click event to expand/collapse
   dirRow.addEventListener('click', () => {
     expandDirectory(dir.path, parentRow);
+  });
+  
+  // Stop propagation for button clicks
+  analyzeBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    alert('Directory analysis will be implemented in a future update.');
   });
   
   return dirRow;
@@ -2427,32 +2444,33 @@ function createFileRow(file, fileIndex, series, parentRow, indentLevel) {
   // Status cell
   const statusCell = document.createElement('td');
   statusCell.className = 'status-cell text-center';
-  statusCell.innerHTML = '<span class="badge badge-ghost">Pending Analysis</span>';
+  statusCell.innerHTML = '<span class="badge badge-ghost">Pending</span>';
   
   // Actions cell
   const actionsCell = document.createElement('td');
-  actionsCell.className = 'text-right';
+  actionsCell.className = 'text-right whitespace-nowrap';
   
   // Add analyze button to file row
   const analyzeBtn = document.createElement('button');
-  analyzeBtn.className = 'btn btn-xs btn-primary';
+  analyzeBtn.className = 'btn btn-xs btn-outline btn-primary';
+  analyzeBtn.title = 'Analyze File';
   analyzeBtn.innerHTML = `
-    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-1">
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3 h-3">
       <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z" />
     </svg>
-    Analyze
   `;
-  analyzeBtn.addEventListener('click', (e) => {
-    e.stopPropagation(); // Prevent row click
-    // TODO: Implement single file analysis
-    console.log(`Analyze file: ${file.path}`);
-  });
   actionsCell.appendChild(analyzeBtn);
   
   // Add cells to row
   fileRow.appendChild(titleCell);
   fileRow.appendChild(statusCell);
   fileRow.appendChild(actionsCell);
+  
+  // Add click handler for analyze button
+  analyzeBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    console.log(`Analyze file: ${file.path}`);
+  });
   
   return fileRow;
 }
@@ -2607,6 +2625,33 @@ styleElement.textContent = `
     align-items: center;
     justify-content: center;
     white-space: nowrap;
+  }
+  
+  /* Compact action buttons */
+  .btn-xs {
+    height: 1.5rem;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+    min-height: 1.5rem;
+  }
+  
+  .btn-xs.btn-outline {
+    --tw-border-opacity: 0.5;
+  }
+  
+  .btn-xs.btn-outline:hover {
+    --tw-border-opacity: 1;
+  }
+  
+  /* Fixed width for actions column */
+  .text-right.whitespace-nowrap {
+    width: 1%;
+    white-space: nowrap;
+  }
+  
+  /* Ensure tooltips appear on hover */
+  [title] {
+    position: relative;
   }
 `;
 document.head.appendChild(styleElement);

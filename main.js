@@ -328,4 +328,41 @@ ipcMain.handle('add-series', async (event, { directory, name, tmdbId }) => {
     console.error('Error adding series:', error);
     throw error;
   }
+});
+
+// Handle get-directory-contents request
+ipcMain.handle('get-directory-contents', async (event, directoryPath) => {
+  try {
+    console.log(`Main process: Getting contents of directory: ${directoryPath}`);
+    
+    // Check if directory exists
+    if (!fs.existsSync(directoryPath)) {
+      console.error(`Directory does not exist: ${directoryPath}`);
+      return [];
+    }
+    
+    // Read directory contents
+    const items = fs.readdirSync(directoryPath, { withFileTypes: true });
+    console.log(`Found ${items.length} items in directory`);
+    
+    // Convert to array of objects with type, name, and path
+    const contents = items.map(item => {
+      const itemPath = path.join(directoryPath, item.name);
+      const stats = fs.statSync(itemPath);
+      
+      return {
+        type: item.isDirectory() ? 'directory' : 'file',
+        name: item.name,
+        path: itemPath,
+        size: stats.size,
+        mtime: stats.mtime.toISOString()
+      };
+    });
+    
+    console.log(`Processed ${contents.length} items`);
+    return contents;
+  } catch (error) {
+    console.error('Error reading directory:', error);
+    return [];
+  }
 }); 

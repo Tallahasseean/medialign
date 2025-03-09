@@ -545,6 +545,14 @@ async function cleanup() {
   }
 }
 
+/**
+ * Get the database module
+ * @returns {Object} - The database module
+ */
+function getDatabase() {
+  return db;
+}
+
 // Get analysis results for a series
 async function getSeriesAnalysis(seriesId) {
   try {
@@ -688,5 +696,6 @@ module.exports = {
   getSeriesAnalysis,
   getAllSeries,
   resetFileExtractionStatus,
-  cleanupDuplicateSeries
+  cleanupDuplicateSeries,
+  getDatabase
 }; 

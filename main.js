@@ -262,4 +262,23 @@ ipcMain.handle('cleanup-duplicate-series', async (event) => {
     console.error('Error cleaning up duplicate series:', error);
     throw error;
   }
+});
+
+// Delete a series from the database
+ipcMain.handle('delete-series', async (event, { seriesId }) => {
+  try {
+    console.log(`Deleting series with ID: ${seriesId}`);
+    
+    // Make sure we have the database module available via processor
+    const db = processor.getDatabase();
+    
+    // Delete the series from the database
+    const result = await db.removeSeries(seriesId);
+    
+    console.log(`Series deleted successfully: ${result.success}`);
+    return result;
+  } catch (error) {
+    console.error('Error deleting series:', error);
+    throw error;
+  }
 }); 

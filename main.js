@@ -188,6 +188,7 @@ ipcMain.handle('get-directory-files', async (event, { directory }) => {
     
     // Check if directory exists
     if (!fs.existsSync(directory)) {
+      console.error(`Directory does not exist: ${directory}`);
       throw new Error(`Directory does not exist: ${directory}`);
     }
     
@@ -196,22 +197,35 @@ ipcMain.handle('get-directory-files', async (event, { directory }) => {
     
     // Process each item
     const files = items.map(item => {
-      const itemPath = path.join(directory, item.name);
-      const stats = fs.statSync(itemPath);
-      
-      return {
-        name: item.name,
-        path: itemPath,
-        isDirectory: item.isDirectory(),
-        size: stats.size,
-        modified: stats.mtime
-      };
+      try {
+        const itemPath = path.join(directory, item.name);
+        const stats = fs.statSync(itemPath);
+        
+        return {
+          name: item.name,
+          path: itemPath,
+          isDirectory: item.isDirectory(),
+          size: stats.size,
+          modified: stats.mtime
+        };
+      } catch (itemError) {
+        console.error(`Error processing item ${item.name}:`, itemError);
+        // Return a minimal object for items we can't fully process
+        return {
+          name: item.name,
+          path: path.join(directory, item.name),
+          isDirectory: item.isDirectory(),
+          error: itemError.message
+        };
+      }
     });
     
     console.log(`Found ${files.length} items in directory: ${directory}`);
     return files;
   } catch (error) {
     console.error('Error getting directory files:', error);
+    // Include stack trace for better debugging
+    console.error(error.stack);
     throw error;
   }
 });
@@ -279,6 +293,39 @@ ipcMain.handle('delete-series', async (event, { seriesId }) => {
     return result;
   } catch (error) {
     console.error('Error deleting series:', error);
+    throw error;
+  }
+});
+
+// Add a new series to the database
+ipcMain.handle('add-series', async (event, { directory, name, tmdbId }) => {
+  try {
+    console.log(`Adding new series: ${name}, Directory: ${directory}, TMDB ID: ${tmdbId}`);
+    
+    // Validate directory
+    if (!fs.existsSync(directory)) {
+      console.error(`Directory does not exist: ${directory}`);
+      throw new Error(`Directory does not exist: ${directory}`);
+    }
+    
+    // Make sure we have the database module available via processor
+    const db = processor.getDatabase();
+    
+    // Add the series to the database
+    const seriesId = await db.addSeries(tmdbId, name, directory);
+    
+    console.log(`Series added successfully with ID: ${seriesId}`);
+    
+    // Return the series ID and other details
+    return {
+      id: seriesId,
+      directory,
+      name,
+      imdb_id: tmdbId,
+      created_at: new Date().toISOString()
+    };
+  } catch (error) {
+    console.error('Error adding series:', error);
     throw error;
   }
 }); 

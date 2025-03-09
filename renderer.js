@@ -725,6 +725,12 @@ function renderSeriesTable() {
         return;
       }
       
+      console.log("Series row clicked:", {
+        seriesId: series.id,
+        directory: series.directory, 
+        dataset: row.dataset
+      });
+      
       expandDirectory(series.directory, row);
     });
     
@@ -1399,9 +1405,10 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   //Confirm Add Series button click handler
-  confirmAddSeries.addEventListener('click', () => {
+  confirmAddSeries.addEventListener('click', async () => {
     const directory = newSeriesDirectory.value;
     const tmdbId = newTmdbId.value;
+    const name = newSeriesTitle.value || extractTitleFromPath(directory);
     
     // Validate directory
     if (!directory) {
@@ -1415,31 +1422,69 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     
-    // Check if we're editing or adding
-    const editIndex = newSeriesDirectory.dataset.editIndex;
-    if (editIndex !== undefined) {
-      // Update existing series
-      seriesList[editIndex].directory = directory;
-      seriesList[editIndex].tmdbId = tmdbId;
-      seriesList[editIndex].name = newSeriesTitle.value || extractTitleFromPath(directory);
-    } else {
-      // Add new series
-      const seriesName = newSeriesTitle.value || extractTitleFromPath(directory);
+    try {
+      // Check if we're editing or adding
+      const editIndex = newSeriesDirectory.dataset.editIndex;
       
-      seriesList.push({
-        directory,
-        tmdbId,
-        status: 'not-analyzed',
-        name: seriesName
-      });
+      if (editIndex !== undefined) {
+        // Update existing series
+        seriesList[editIndex].directory = directory;
+        seriesList[editIndex].tmdbId = tmdbId;
+        seriesList[editIndex].name = name;
+        
+        // Save to localStorage (we'll implement database update later)
+        saveSeriesList();
+      } else {
+        // Add new series to the database
+        console.log(`Adding new series to database: ${name}, Directory: ${directory}`);
+        
+        try {
+          // Call the add-series IPC handler
+          const newSeries = await ipcRenderer.invoke('add-series', { 
+            directory, 
+            name,
+            tmdbId 
+          });
+          
+          console.log('New series added to database:', newSeries);
+          
+          // Add to our local list with the database ID
+          seriesList.push({
+            id: newSeries.id,
+            directory,
+            tmdbId,
+            status: 'not-analyzed',
+            name
+          });
+          
+          // Save to localStorage
+          saveSeriesList();
+        } catch (dbError) {
+          console.error('Error adding series to database:', dbError);
+          alert(`Error adding series: ${dbError.message}`);
+          
+          // Still add to localStorage as a fallback
+          seriesList.push({
+            directory,
+            tmdbId,
+            status: 'not-analyzed',
+            name
+          });
+          
+          // Save to localStorage
+          saveSeriesList();
+        }
+      }
+      
+      // Render the updated table
+      renderSeriesTable();
+      
+      // Close the modal
+      addSeriesModal.close();
+    } catch (error) {
+      console.error('Error adding/updating series:', error);
+      alert(`Error: ${error.message}`);
     }
-    
-    // Save and render
-    saveSeriesList();
-    renderSeriesTable();
-    
-    // Close the modal
-    addSeriesModal.close();
   });
 
   // Event Listeners - Series Details
